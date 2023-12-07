@@ -358,6 +358,8 @@ impl SimpleSchedulerImpl {
                         "Action {} has no more listeners during evict_worker()",
                         action_info.digest().hash_str()
                     );
+                    self.queued_actions_set.remove(action_info);
+                    self.queued_actions.remove(action_info);
                 }
             }
             None => {
