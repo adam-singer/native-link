@@ -652,16 +652,17 @@ async fn get_config() -> Result<CasConfig, Box<dyn std::error::Error>> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt()
-        .pretty()
-        .with_thread_ids(true)
-        .with_thread_names(true)
-        .with_env_filter(
-            EnvFilter::builder()
-                .with_default_directive(LevelFilter::WARN.into())
-                .from_env_lossy(),
-        )
-        .init();
+    console_subscriber::init();
+    // tracing_subscriber::fmt()
+    //     .pretty()
+    //     .with_thread_ids(true)
+    //     .with_thread_names(true)
+    //     .with_env_filter(
+    //         EnvFilter::builder()
+    //             .with_default_directive(LevelFilter::WARN.into())
+    //             .from_env_lossy(),
+    //     )
+    //     .init();
 
     let mut cfg = futures::executor::block_on(get_config())?;
 
