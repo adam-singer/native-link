@@ -363,6 +363,7 @@ async fn add_files_to_cache<Fe: FileEntry>(
         let time_since_anchor = anchor_time
             .duration_since(atime)
             .map_err(|_| make_input_err!("File access time newer than now"))?;
+        info!("time_since_anchor = {:?}", time_since_anchor);
         evicting_map
             .insert_with_time(digest, Arc::new(file_entry), time_since_anchor.as_secs() as i32)
             .await;
@@ -406,6 +407,7 @@ async fn add_files_to_cache<Fe: FileEntry>(
 
     file_infos.sort_by(|a, b| a.1.cmp(&b.1));
     for (file_name, atime, file_size) in file_infos {
+        info!("file_name = {:?}, atime = {:?}, file_size = {:?}", file_name, atime, file_size);
         let result = process_entry(evicting_map, &file_name, atime, file_size, anchor_time, shared_context).await;
         if let Err(err) = result {
             warn!(

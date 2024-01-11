@@ -45,15 +45,21 @@ pub trait InstantWrapper: 'static {
 
 impl InstantWrapper for SystemTime {
     fn from_secs(secs: u64) -> SystemTime {
-        SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(secs)).unwrap()
+        let d = SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(secs)).unwrap();
+        // info!("from_secs: {:?}", d);
+        d
     }
 
     fn unix_timestamp(&self) -> u64 {
-        self.duration_since(UNIX_EPOCH).unwrap().as_secs()
+        let d = self.duration_since(UNIX_EPOCH).unwrap().as_secs();
+        // info!("unix_timestamp: {:?}", d);
+        d
     }
 
     fn elapsed(&self) -> Duration {
-        <SystemTime>::elapsed(self).unwrap()
+        let d = <SystemTime>::elapsed(self).unwrap();
+        // info!("elapsed: {:?}", d);
+        d
     }
 }
 
@@ -189,6 +195,7 @@ where
         state.lru.clear();
         for (digest, seconds_since_anchor) in seiralized_lru.data {
             let entry = entry_builder(&digest);
+            info!("digest = {:?}, seconds_since_anchor = {:?}", digest, seconds_since_anchor);
             state.lru.put(
                 digest,
                 EvictionItem {
@@ -202,12 +209,26 @@ where
     }
 
     fn should_evict(&self, lru_len: usize, peek_entry: &EvictionItem<T>, sum_store_size: u64, max_bytes: u64) -> bool {
+        // TODO(adams): does seconds_since_anchor meet the time threadshold?
+        //
         let is_over_size = max_bytes != 0 && sum_store_size >= max_bytes;
 
-        let evict_older_than_seconds = (self.anchor_time.elapsed().as_secs() as i32) - self.max_seconds;
+        let d = self.anchor_time.elapsed().as_secs() as i32;
+        info!("self.anchor_time.elapsed().as_secs() as i32: {:?}", d);
+        info!("self.max_seconds: {:?}", self.max_seconds);
+        let evict_older_than_seconds = d - self.max_seconds;
+        info!("evict_older_than_seconds: {:?}", evict_older_than_seconds);
+
+
+        info!("peek_entry = {:?}", peek_entry);
+        info!("peek_entry.seconds_since_anchor < evict_older_than_seconds: {:?} < {:?}", peek_entry.seconds_since_anchor, evict_older_than_seconds);
+        // TODO(adams): might want to remove max_seconds or just do it on read
         let old_item_exists = self.max_seconds != 0 && peek_entry.seconds_since_anchor < evict_older_than_seconds;
 
+        info!("lru_len as u64) > self.max_count: {:?} < {:?}", (lru_len as u64), self.max_count);
         let is_over_count = self.max_count != 0 && (lru_len as u64) > self.max_count;
+
+        info!("is_over_size || old_item_exists || is_over_count = {:?} || {:?} || {:?}", is_over_size, old_item_exists, is_over_count);
 
         is_over_size || old_item_exists || is_over_count
     }
@@ -249,18 +270,23 @@ where
 
     pub async fn size_for_key(&self, digest: &DigestInfo) -> Option<usize> {
         let mut state = self.state.lock().await;
+        // self.evict_items(state.deref_mut()).await;
         let Some(entry) = state.lru.get_mut(digest) else {
             return None;
         };
-        entry.seconds_since_anchor = self.anchor_time.elapsed().as_secs() as i32;
+        let d = self.anchor_time.elapsed().as_secs() as i32;
+        info!("size_for_key() entry.seconds_since_anchor = self.anchor_time.elapsed().as_secs() as i32;, {:?}", d);
+        entry.seconds_since_anchor = d;
         let data = entry.data.clone();
         drop(state);
         data.touch().await;
         Some(data.len())
     }
 
+    // TODO(adams): make size_for_key call sizes_for_keys
     pub async fn sizes_for_keys(&self, digests: &[DigestInfo], results: &mut [Option<usize>]) {
         let mut state = self.state.lock().await;
+        // self.evict_items(state.deref_mut()).await;
         let seconds_since_anchor = self.anchor_time.elapsed().as_secs() as i32;
         let to_touch: Vec<T> = digests
             .iter()
@@ -269,7 +295,9 @@ where
                 let Some(entry) = state.lru.get_mut(digest) else {
                     return None;
                 };
+                info!("sizes_for_keys() entry.seconds_since_anchor = seconds_since_anchor; {:?}", seconds_since_anchor);
                 entry.seconds_since_anchor = seconds_since_anchor;
+                // TODO(adams): does seconds_since_anchor meet the time threadshold?
                 let data = entry.data.clone();
                 *result = Some(data.len());
                 Some(data)
@@ -286,8 +314,12 @@ where
 
     pub async fn get(&self, digest: &DigestInfo) -> Option<T> {
         let mut state = self.state.lock().await;
+        // self.evict_items(state.deref_mut()).await;
         if let Some(entry) = state.lru.get_mut(digest) {
-            entry.seconds_since_anchor = self.anchor_time.elapsed().as_secs() as i32;
+            let d = self.anchor_time.elapsed().as_secs() as i32;
+            info!("GET(): entry.seconds_since_anchor = self.anchor_time.elapsed().as_secs() as i32;, {:?}", d);
+            entry.seconds_since_anchor = d;
+            // TODO(adams): does seconds_since_anchor meet the time threadshold?
             let data = entry.data.clone();
             drop(state);
             data.touch().await;
@@ -295,6 +327,8 @@ where
         }
         None
     }
+
+    // TODO(adams): example of it for size for keys..
 
     /// Returns the replaced item if any.
     pub async fn insert(&self, digest: DigestInfo, data: T) -> Option<T> {
@@ -333,6 +367,7 @@ where
         let mut replaced_items = Vec::new();
         for (digest, data) in inserts.into_iter() {
             let new_item_size = data.len() as u64;
+            info!("inner_insert_many: digest = {:?}, new_item_size = {:?}, seconds_since_anchor = {:?}", digest, new_item_size, seconds_since_anchor);
             let eviction_item = EvictionItem {
                 seconds_since_anchor,
                 data,
@@ -415,7 +450,7 @@ impl<T: LenEntry + Debug, I: InstantWrapper> MetricsComponent for EvictingMap<T,
                 &state.sum_store_size,
                 "Total size of all items in the store",
             );
-            c.publish("items_in_store_total", &state.lru.len(), "Mumber of items in the store");
+            c.publish("items_in_store_total", &state.lru.len(), "Number of items in the store");
             c.publish(
                 "oldest_item_timestamp",
                 &state
