@@ -22,6 +22,7 @@ use futures::{join, FutureExt};
 use nativelink_error::{make_err, Code, Error, ResultExt};
 use nativelink_util::buf_channel::{make_buf_channel_pair, DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
+use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
 use nativelink_util::metrics_utils::Registry;
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 
@@ -101,6 +102,12 @@ impl FastSlowStore {
         } else {
             None
         }
+    }
+}
+
+impl HealthStatusIndicator for FastSlowStore {
+    fn check_health(&self) -> HealthStatus {
+        HealthStatus::Ok(String::from("FastSlowStore"), String::from("no problems"))
     }
 }
 

@@ -22,6 +22,7 @@ use nativelink_error::{make_input_err, Error, ResultExt};
 use nativelink_util::buf_channel::{make_buf_channel_pair, DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
 use nativelink_util::digest_hasher::{DigestHasher, DigestHasherFunc};
+use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
 use nativelink_util::metrics_utils::{Collector, CollectorState, CounterWithTime, MetricsComponent, Registry};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 
@@ -106,6 +107,12 @@ impl VerifyStore {
                 .err_tip(|| "Failed to write chunk to inner store in verify store")?;
         }
         Ok(())
+    }
+}
+
+impl HealthStatusIndicator for VerifyStore {
+    fn check_health(&self) -> HealthStatus {
+        HealthStatus::Ok(String::from("VerifyStore"), String::from("no problems"))
     }
 }
 

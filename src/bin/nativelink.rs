@@ -27,7 +27,7 @@ use hyper::{Response, StatusCode};
 use nativelink_config::cas_server::{
     CasConfig, CompressionAlgorithm, GlobalConfig, ListenerConfig, ServerConfig, WorkerConfig,
 };
-use nativelink_config::stores::ConfigDigestHashFunction;
+use nativelink_config::stores::{ConfigDigestHashFunction, FilesystemStore};
 use nativelink_error::{make_err, Code, Error, ResultExt};
 use nativelink_scheduler::default_scheduler_factory::scheduler_factory;
 use nativelink_scheduler::worker::WorkerId;
@@ -349,12 +349,18 @@ async fn inner_main(cfg: CasConfig, server_start_timestamp: u64) -> Result<(), B
             );
 
         let root_metrics_registry = root_metrics_registry.clone();
-
+        let store_health_manager = store_manager.clone();
         let mut svc = Router::new()
             // This is the default service that executes if no other endpoint matches.
             .fallback_service(tonic_services.into_service().map_err(|e| panic!("{e}")))
             // This is a generic endpoint used to check if the server is up.
-            .route_service("/status", axum::routing::get(move || async move { "Ok".to_string() }));
+            .route_service(
+                "/status",
+                axum::routing::get(move || async move {
+                    let health_status = store_health_manager.get_stores_health();
+                    format!("Ok: {health_status:?}")
+                }),
+            );
 
         if let Some(prometheus_cfg) = services.experimental_prometheus {
             fn error_to_response<E: std::error::Error>(e: E) -> Response<String> {

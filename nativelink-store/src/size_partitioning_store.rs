@@ -19,6 +19,7 @@ use async_trait::async_trait;
 use nativelink_error::{Error, ResultExt};
 use nativelink_util::buf_channel::{DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
+use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 use tokio::join;
 
@@ -39,6 +40,12 @@ impl SizePartitioningStore {
             lower_store,
             upper_store,
         }
+    }
+}
+
+impl HealthStatusIndicator for SizePartitioningStore {
+    fn check_health(&self) -> HealthStatus {
+        HealthStatus::Ok(String::from("DedupStore"), String::from("no problems"))
     }
 }
 

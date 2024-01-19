@@ -35,6 +35,7 @@ use nativelink_proto::google::bytestream::{
 };
 use nativelink_util::buf_channel::{DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
+use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
 use nativelink_util::retry::{ExponentialBackoff, Retrier, RetryResult};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 use nativelink_util::tls_utils;
@@ -480,6 +481,12 @@ impl GrpcStore {
         self.update_action_result(Request::new(update_action_request))
             .await
             .map(|_| ())
+    }
+}
+
+impl HealthStatusIndicator for GrpcStore {
+    fn check_health(&self) -> HealthStatus {
+        HealthStatus::Ok(String::from("GrpcStore"), String::from("no problems"))
     }
 }
 

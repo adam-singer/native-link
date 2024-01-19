@@ -23,6 +23,7 @@ use nativelink_error::{Code, Error, ResultExt};
 use nativelink_util::buf_channel::{DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
 use nativelink_util::evicting_map::{EvictingMap, LenEntry};
+use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
 use nativelink_util::metrics_utils::{Collector, CollectorState, MetricsComponent, Registry};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 
@@ -70,6 +71,12 @@ impl MemoryStore {
 
     pub async fn remove_entry(&self, digest: &DigestInfo) -> bool {
         self.evicting_map.remove(digest).await
+    }
+}
+
+impl HealthStatusIndicator for MemoryStore {
+    fn check_health(&self) -> HealthStatus {
+        HealthStatus::Ok(String::from("MemoryStore"), String::from("no problems"))
     }
 }
 

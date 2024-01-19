@@ -26,6 +26,7 @@ use lz4_flex::block::{compress_into, decompress_into, get_maximum_output_size};
 use nativelink_error::{error_if, make_err, Code, Error, ResultExt};
 use nativelink_util::buf_channel::{make_buf_channel_pair, DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::{DigestInfo, JoinHandleDropGuard};
+use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 use serde::{Deserialize, Serialize};
 
@@ -226,6 +227,12 @@ impl CompressionStore {
             config: lz4_config,
             bincode_options: DefaultOptions::new().with_fixint_encoding(),
         })
+    }
+}
+
+impl HealthStatusIndicator for CompressionStore {
+    fn check_health(&self) -> HealthStatus {
+        HealthStatus::Ok(String::from("CompressionStore"), String::from("no problems"))
     }
 }
 

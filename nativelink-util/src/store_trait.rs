@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::buf_channel::{make_buf_channel_pair, DropCloserReadHalf, DropCloserWriteHalf};
 use crate::common::DigestInfo;
 use crate::metrics_utils::Registry;
+use crate::health_utils::HealthStatusIndicator;
 
 #[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum UploadSizeInfo {
@@ -40,7 +41,7 @@ pub enum UploadSizeInfo {
 }
 
 #[async_trait]
-pub trait Store: Sync + Send + Unpin {
+pub trait Store: Sync + Send + Unpin + HealthStatusIndicator {
     /// Look up a digest in the store and return None if it does not exist in
     /// the store, or Some(size) if it does.
     /// Note: On an AC store the size will be incorrect and should not be used!

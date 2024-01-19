@@ -29,6 +29,7 @@ use nativelink_error::{make_err, make_input_err, Code, Error, ResultExt};
 use nativelink_util::buf_channel::{make_buf_channel_pair, DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::{fs, DigestInfo};
 use nativelink_util::evicting_map::{EvictingMap, LenEntry};
+use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
 use nativelink_util::metrics_utils::{Collector, CollectorState, MetricsComponent, Registry};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
@@ -747,6 +748,12 @@ impl<Fe: FileEntry> Store for FilesystemStore<Fe> {
 
     fn register_metrics(self: Arc<Self>, registry: &mut Registry) {
         registry.register_collector(Box::new(Collector::new(&self)));
+    }
+}
+
+impl<Fe: FileEntry> HealthStatusIndicator for FilesystemStore<Fe> {
+    fn check_health(&self) -> HealthStatus {
+        HealthStatus::Ok(String::from("FilesystemStore"), String::from("no problems"))
     }
 }
 

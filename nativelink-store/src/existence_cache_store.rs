@@ -23,6 +23,7 @@ use nativelink_error::{error_if, Error, ResultExt};
 use nativelink_util::buf_channel::{DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
 use nativelink_util::evicting_map::{EvictingMap, LenEntry};
+use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 
 #[derive(Clone, Debug)]
@@ -124,6 +125,12 @@ impl ExistenceCacheStore {
 
     fn pin_inner(&self) -> Pin<&dyn Store> {
         Pin::new(self.inner_store.as_ref())
+    }
+}
+
+impl HealthStatusIndicator for ExistenceCacheStore {
+    fn check_health(&self) -> HealthStatus {
+        HealthStatus::Ok(String::from("ExistenceCacheStore"), String::from("no problems"))
     }
 }
 

@@ -19,6 +19,7 @@ use nativelink_error::Error;
 use nativelink_store::fast_slow_store::FastSlowStore;
 use nativelink_store::memory_store::MemoryStore;
 use nativelink_util::common::DigestInfo;
+use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
 use nativelink_util::store_trait::Store;
 use rand::rngs::SmallRng;
 use rand::{Rng, SeedableRng};
@@ -230,6 +231,12 @@ mod fast_slow_store_tests {
             read_rx: Mutex<Option<tokio::sync::oneshot::Receiver<()>>>,
             eof_tx: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
             digest: Option<DigestInfo>,
+        }
+
+        impl HealthStatusIndicator for DropCheckStore {
+            fn check_health(&self) -> HealthStatus {
+                HealthStatus::Ok(String::from("DropCheckStore"), String::from("no problems"))
+            }
         }
 
         #[async_trait]

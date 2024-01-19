@@ -19,6 +19,7 @@ use async_trait::async_trait;
 use nativelink_error::{make_err, Code, Error, ResultExt};
 use nativelink_util::buf_channel::{DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
+use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 
 #[derive(Default)]
@@ -27,6 +28,12 @@ pub struct NoopStore;
 impl NoopStore {
     pub fn new() -> Self {
         NoopStore {}
+    }
+}
+
+impl HealthStatusIndicator for NoopStore {
+    fn check_health(&self) -> HealthStatus {
+        HealthStatus::Ok(String::from("NoopStore"), String::from("no problems"))
     }
 }
 
