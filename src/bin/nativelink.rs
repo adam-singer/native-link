@@ -27,7 +27,7 @@ use hyper::{Response, StatusCode};
 use nativelink_config::cas_server::{
     CasConfig, CompressionAlgorithm, GlobalConfig, ListenerConfig, ServerConfig, WorkerConfig,
 };
-use nativelink_config::stores::{ConfigDigestHashFunction, FilesystemStore};
+use nativelink_config::stores::ConfigDigestHashFunction;
 use nativelink_error::{make_err, Code, Error, ResultExt};
 use nativelink_scheduler::default_scheduler_factory::scheduler_factory;
 use nativelink_scheduler::worker::WorkerId;
@@ -357,7 +357,8 @@ async fn inner_main(cfg: CasConfig, server_start_timestamp: u64) -> Result<(), B
             .route_service(
                 "/status",
                 axum::routing::get(move || async move {
-                    let health_status = store_health_manager.get_stores_health();
+                    // let health_status = store_health_manager.get_stores_health();
+                    let health_status = "";
                     format!("Ok: {health_status:?}")
                 }),
             );

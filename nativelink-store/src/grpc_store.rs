@@ -35,7 +35,7 @@ use nativelink_proto::google::bytestream::{
 };
 use nativelink_util::buf_channel::{DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
-use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
+use nativelink_util::health_utils::{Description, HealthStatus, HealthStatusIndicator};
 use nativelink_util::retry::{ExponentialBackoff, Retrier, RetryResult};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 use nativelink_util::tls_utils;
@@ -484,9 +484,121 @@ impl GrpcStore {
     }
 }
 
+// health check utils
+impl GrpcStore {
+    async fn check_cas_client(&self) -> Result<(), Error> {
+        // TODO(adams): pick better defaults here.
+        const HASH1: &str = "0123456789abcdef000000000000000000000000000000000123456789abcdef";
+        const VALUE2: &str = "2";
+        let digest = nativelink_proto::build::bazel::remote::execution::v2::Digest {
+            hash: HASH1.to_string(),
+            size_bytes: VALUE2.len() as i64,
+        };
+
+        let upload_request =
+            BatchUpdateBlobsRequest {
+                instance_name: "main".to_string(),
+                requests: vec![nativelink_proto::build::bazel::remote::execution::v2::batch_update_blobs_request::Request {
+                    digest: Some(digest.clone()),
+                    data: VALUE2.into(),
+                    compressor: nativelink_proto::build::bazel::remote::execution::v2::compressor::Value::Identity.into(),
+                }],
+                digest_function: digest_function::Value::Sha256.into(),
+
+
+            };
+
+            let mut request = upload_request;
+        let r = self.perform_request(request, |request| async move {
+            self.cas_client.clone()
+            .batch_update_blobs(Request::new(request))
+            .await
+            .err_tip(|| "failure")
+        }).await;
+
+        Ok(())
+
+    }
+}
+
+
+#[async_trait]
 impl HealthStatusIndicator for GrpcStore {
-    fn check_health(&self) -> HealthStatus {
-        HealthStatus::Ok(String::from("GrpcStore"), String::from("no problems"))
+    fn check_health(&self) -> Description {
+        // use tonic::client::Grpc;
+        // check cas_client
+        {
+            let c = self.check_cas_client();
+
+
+            // let grpc_request = Request::new(FindMissingBlobsRequest {
+            //     instance_name: self.instance_name.clone(),
+            //     blob_digests: digests.iter().map(|digest| digest.into()).collect(),
+            //     digest_function: digest_function::Value::Sha256.into(),
+            // });
+            // let mut request = grpc_request.into_inner();
+            // request.instance_name = self.instance_name.clone();
+            // self.perform_request(request, |request| async move {
+            //     self.cas_client
+            //         .clone()
+            //         .find_missing_blobs(Request::new(request))
+            //         .await
+            //         .err_tip(|| "in GrpcStore::find_missing_blobs")
+            // })
+            // .await
+        }
+
+        // check bytestream_client
+        {
+            // let resource_name = format!(
+            //     "{}/blobs/{}/{}",
+            //     &self.instance_name,
+            //     digest.hash_str(),
+            //     digest.size_bytes,
+            // );
+            // let grpc_request = Request::new(ReadRequest {
+            //     resource_name,
+            //     read_offset: offset as i64,
+            //     read_limit: length.unwrap_or(0) as i64,
+            // });
+            // let mut request = grpc_request.into_request().into_inner();
+            // let i = self.perform_request(request, |request| async move {
+            //     self.bytestream_client
+            //         .clone()
+            //         .read(Request::new(request))
+            //         .await
+            //         .err_tip(|| "in GrpcStore::read")
+            // })
+            // .await;
+        }
+
+        // check ac_client
+        {
+            // let action_result_request = GetActionResultRequest {
+            //     instance_name: self.instance_name.clone(),
+            //     action_digest: Some(digest.into()),
+            //     inline_stdout: false,
+            //     inline_stderr: false,
+            //     inline_output_files: Vec::new(),
+            //     digest_function: digest_function::Value::Sha256.into(),
+            // };
+
+            // let grpc_request = Request::new(action_result_request);
+            // let mut request = grpc_request.into_inner();
+            // request.instance_name = self.instance_name.clone();
+            // self.perform_request(request, |request| async move {
+            //     self.ac_client
+            //         .clone()
+            //         .get_action_result(Request::new(request))
+            //         .await
+            //         .err_tip(|| "in GrpcStore::get_action_result")
+            // })
+            // .await
+        }
+
+
+        // HealthStatus::Ok(String::from("GrpcStore"), String::from("no problems"))
+        "no problems".into()
     }
 }
 

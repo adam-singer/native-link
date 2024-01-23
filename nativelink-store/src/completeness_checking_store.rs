@@ -25,7 +25,7 @@ use nativelink_proto::build::bazel::remote::execution::v2::{
 };
 use nativelink_util::buf_channel::{DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
-use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
+use nativelink_util::health_utils::{Description, HealthStatus, HealthStatusIndicator};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 use parking_lot::Mutex;
 use tokio::sync::Notify;
@@ -309,8 +309,8 @@ async fn inner_has_with_results(
 }
 
 impl HealthStatusIndicator for CompletenessCheckingStore {
-    fn check_health(&self) -> HealthStatus {
-        HealthStatus::Ok(String::from("CompletenessCheckingStore"), String::from("no problems"))
+    fn check_health(&self) -> Description {
+        "no problems".into()
     }
 }
 

@@ -29,7 +29,7 @@ use nativelink_error::{make_err, make_input_err, Code, Error, ResultExt};
 use nativelink_util::buf_channel::{make_buf_channel_pair, DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::{fs, DigestInfo};
 use nativelink_util::evicting_map::{EvictingMap, LenEntry};
-use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
+use nativelink_util::health_utils::{Description, HealthStatus, HealthStatusIndicator};
 use nativelink_util::metrics_utils::{Collector, CollectorState, MetricsComponent, Registry};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt, SeekFrom};
@@ -752,8 +752,43 @@ impl<Fe: FileEntry> Store for FilesystemStore<Fe> {
 }
 
 impl<Fe: FileEntry> HealthStatusIndicator for FilesystemStore<Fe> {
-    fn check_health(&self) -> HealthStatus {
-        HealthStatus::Ok(String::from("FilesystemStore"), String::from("no problems"))
+    fn check_health(&self) -> Description {
+        use std::io::{Result, Write};
+        use tempfile::tempfile_in;
+        use tempfile::NamedTempFile;
+        let temp_path = &self.shared_context.temp_path;
+        info!(temp_path);
+        // let file = tempfile_in(temp_path);
+        let file = NamedTempFile::with_prefix_in(&".fs_hc_", temp_path);
+
+        match file {
+            Ok(mut f) => {
+                const ONE_MB: usize = 1_000_000;
+                let mut buffer: Vec<u8> = Vec::with_capacity(ONE_MB);
+                for _ in 0..ONE_MB {
+                    buffer.push(rand::random::<u8>());
+                }
+
+                let write_result = f.write_all(&buffer);
+                let flush_result = f.flush();
+                f.keep();
+                match write_result {
+                    Ok(()) => {
+                        //let remove_result = std::fs::remove_file(temp_path);
+                        /// HealthStatus::Ok(String::from("FilesystemStore"), String::from("no problems"))
+                        "no problem".into()
+                    }
+
+                    Err(error) => {
+                        //HealthStatus::Failed(String::from("FilesystemStore"), String::from(error.to_string()))
+                        "problem".into()
+                    }
+                }
+            }
+            Err(error) =>
+            // HealthStatus::Failed(String::from("FilesystemStore"), String::from(error.to_string())),
+            "problem".into(),
+        }
     }
 }
 

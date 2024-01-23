@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use crate::buf_channel::{make_buf_channel_pair, DropCloserReadHalf, DropCloserWriteHalf};
 use crate::common::DigestInfo;
 use crate::metrics_utils::Registry;
-use crate::health_utils::HealthStatusIndicator;
+use crate::health_utils::{HealthRegistry, HealthStatusIndicator};
 
 #[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
 pub enum UploadSizeInfo {
@@ -181,4 +181,6 @@ pub trait Store: Sync + Send + Unpin + HealthStatusIndicator {
 
     /// Register any metrics that this store wants to expose to the Prometheus.
     fn register_metrics(self: Arc<Self>, _registry: &mut Registry) {}
+
+    fn register_health_check(self: Arc<Self>, _registry: &mut HealthRegistry) {}
 }

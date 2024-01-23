@@ -24,7 +24,7 @@ use nativelink_error::{make_err, Code, Error, ResultExt};
 use nativelink_util::buf_channel::{DropCloserReadHalf, DropCloserWriteHalf, StreamReader};
 use nativelink_util::common::DigestInfo;
 use nativelink_util::fastcdc::FastCDC;
-use nativelink_util::health_utils::{HealthStatus, HealthStatusIndicator};
+use nativelink_util::health_utils::{Description, HealthStatus, HealthStatusIndicator};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 use serde::{Deserialize, Serialize};
 use tokio_util::codec::FramedRead;
@@ -145,8 +145,8 @@ impl DedupStore {
 }
 
 impl HealthStatusIndicator for DedupStore {
-    fn check_health(&self) -> HealthStatus {
-        HealthStatus::Ok(String::from("DedupStore"), String::from("no problems"))
+    fn check_health(&self) -> Description {
+        "no problems".into()
     }
 }
 
