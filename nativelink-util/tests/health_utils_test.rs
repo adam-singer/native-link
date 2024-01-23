@@ -28,8 +28,8 @@ mod health_utils_tests {
     }
 
     impl HealthStatusIndicator for MockComponentImpl {
-        fn check_health(&self) -> Description {
-            "no error".into()
+        fn check_health(&self) -> HealthStatus {
+            HealthStatus::Ok(self.component_name(), "no error".into())
         }
     }
 
@@ -42,7 +42,7 @@ mod health_utils_tests {
 
     #[tokio::test]
     async fn create_registery() -> Result<(), Error> {
-        let mut health_registery = HealthRegistry::new("nativelink");
+        let mut health_registery = HealthRegistry::new("nativelink".into());
 
         // let mock_component_impl = Arc::new(MockComponentImpl);
         let mock_component_impl = MockComponentImpl;
@@ -55,7 +55,7 @@ mod health_utils_tests {
 
         let collections = health_registery.iter_collectors();
 
-        println!("{:?}", collections);
+        // println!("{:?}", collections);
 
         for c in collections {
             println!("{:?}", c);
@@ -66,7 +66,7 @@ mod health_utils_tests {
 
     #[tokio::test]
     async fn create_nested() -> Result<(), Error> {
-        let mut health_registery = HealthRegistry::new("nativelink");
+        let mut health_registery = HealthRegistry::new("nativelink".into());
 
         // let mock_component_impl = Arc::new(MockComponentImpl);
         let mock_component_impl = MockComponentImpl;
@@ -79,12 +79,12 @@ mod health_utils_tests {
 
         let mock_component_impl2 = MockComponentImpl;
 
-        let mut nested1 = health_registery.add_dependency("nested1");
+        let mut nested1 = health_registery.add_dependency("nested1".into());
         nested1.register_collector(Box::new(mock_component_impl2));
 
         let mock_component_impl3 = MockComponentImpl;
 
-        let mut nested2 = health_registery.add_dependency("nested2");
+        let mut nested2 = health_registery.add_dependency("nested2".into());
         nested2.register_collector(Box::new(mock_component_impl3));
 
         let mock_component_impl4 = MockComponentImpl;
@@ -92,7 +92,7 @@ mod health_utils_tests {
 
         let collections = health_registery.iter_collectors();
 
-        println!("{:?}", collections);
+        // println!("{:?}", collections);
 
         // Health Status isn't enough, we need to know nesting and/or dependency name
         for c in collections {
