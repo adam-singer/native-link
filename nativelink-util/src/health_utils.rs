@@ -14,7 +14,7 @@ pub enum HealthStatus {
     Failed(Name,  Description),
 }
 
-pub trait HealthStatusIndicator {
+pub trait HealthStatusIndicator: std::fmt::Debug + Send + Sync + 'static  {
     fn component_name(&self) -> Name {
         Cow::Borrowed(std::any::type_name::<Self>())
     }
@@ -27,6 +27,19 @@ pub trait HealthStatusIndicator {
     // TODO: Most likely this will need to be async
     fn check_health(&self) -> Description {
         "no error".into()
+    }
+
+    // TODO(adams): do we really need this a a "collect"? Since iterator is implemented here it
+    //  could be anything..
+    fn collect<'a>(
+        &'a self,
+    ) -> Box<dyn Iterator<Item = Cow<'a, HealthStatus>> + 'a> {
+        let a: HealthStatus = self.internal_check_health();
+        let b = Cow::Owned(a);
+        let c = vec![b];
+        let d = c.into_iter();
+        let e = Box::new(d);
+        e
     }
 }
 
@@ -49,11 +62,11 @@ where T: Sync + Send + 'static,
     }
 }
 
-pub trait HealthCollectorTrait: std::fmt::Debug + Send + Sync + 'static {
-    fn collect<'a>(
-        &'a self,
-    ) -> Box<dyn Iterator<Item = Cow<'a, HealthStatus>> + 'a>;
-}
+// pub trait HealthCollectorTrait: std::fmt::Debug + Send + Sync + 'static {
+//     fn collect<'a>(
+//         &'a self,
+//     ) -> Box<dyn Iterator<Item = Cow<'a, HealthStatus>> + 'a>;
+// }
 
 
 impl<T: Sync + Send + 'static> Debug for HealthCollector<T> {
@@ -65,7 +78,7 @@ impl<T: Sync + Send + 'static> Debug for HealthCollector<T> {
 #[derive(Debug, Default)]
 pub struct HealthRegistry {
     health_component: HealthComponent,
-    collectors: Vec<Box<dyn HealthCollectorTrait>>,
+    collectors: Vec<Box<dyn HealthStatusIndicator>>,
     dependencies: Vec<HealthRegistry>,
 }
 
@@ -77,11 +90,11 @@ impl HealthRegistry {
         }
     }
 
-    pub fn register_collector(&mut self, collector: Box<dyn HealthCollectorTrait>) {
+    pub fn register_collector(&mut self, collector: Box<dyn HealthStatusIndicator>) {
         self.collectors.push(collector);
     }
 
-    pub fn add_dependency<H: AsRef<str>>(&mut self, health_component: impl Into<String>) -> &mut Self {
+    pub fn add_dependency(&mut self, health_component: impl Into<String>) -> &mut Self {
         let dependency = HealthRegistry {
             health_component: HealthComponent(health_component.into()), // NOTE: we could do some name munging here if we wanted.
             ..Default::default()
@@ -96,7 +109,7 @@ impl HealthRegistry {
         let dependency_registries = self.dependencies.iter();
         HealthCollectorIterator {
             // TODO(adams): fix the conversion here.
-            health_component: HealthComponent(self.health_component.as_str().to_string()),
+            health_component: Cow::Owned(HealthComponent(self.health_component.as_str().to_string())),
             collector: None,
             collectors: collectors,
             dependency_collector_iter: None,
@@ -122,10 +135,10 @@ impl From<String> for HealthComponent {
 
 
 pub struct HealthCollectorIterator<'a> {
-    health_component: HealthComponent,
+    health_component: Cow<'a, HealthComponent>,
 
-    collector: Option<Box<dyn Iterator<Item = Cow<'a, HealthStatus>> + 'a>>,
-    collectors: std::slice::Iter<'a, Box<dyn HealthCollectorTrait>>,
+    collector: Option<Box<dyn Iterator<Item = Cow<'a, HealthStatusDescription<'a>>> >>,
+    collectors: std::slice::Iter<'a, Box<dyn HealthStatusIndicator>>,
 
     dependency_collector_iter: Option<Box<HealthCollectorIterator<'a>>>,
     dependency_registries: std::slice::Iter<'a, HealthRegistry>,
@@ -139,8 +152,24 @@ impl<'a> std::fmt::Debug for HealthCollectorIterator<'a> {
     }
 }
 
+#[derive(Clone)]
+pub struct HealthStatusDescription<'a> {
+    health_component: Cow<'a, HealthComponent>,
+    health_status: Cow<'a, HealthStatus>,
+}
+
+impl<'a> HealthStatusDescription<'a> {
+    pub fn new(health_component: Cow<'a, HealthComponent>,
+    health_status: Cow<'a, HealthStatus>) -> Self {
+        HealthStatusDescription {
+            health_component: health_component.clone(),
+            health_status: health_status.clone(),
+        }
+    }
+}
+
 impl <'a> Iterator for HealthCollectorIterator<'a> {
-    type Item = Cow<'a, HealthStatus>;
+    type Item = Cow<'a, HealthStatusDescription<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         loop {
@@ -152,16 +181,49 @@ impl <'a> Iterator for HealthCollectorIterator<'a> {
                 .or_else(|| self.dependency_collector_iter
                                 .as_mut()
                                 .and_then(|i| i.next()))
-                .map(|health_status| {
+                .map(|health_status_description| {
                     // TODO(adams): addtional struct wrapping
-                    Some(health_status)
+                    // self.health_component
+                    // Some(health_status)
+                    // Some(HealthStatusDescription {
+                    //     health_component: self.health_component,
+                    //     health_status: health_status,
+                    // })
+                    Some(health_status_description)
                 })
                 {
                     return m;
                 }
 
             if let Some(collector) = self.collectors.next() {
-                self.collector = Some(collector.collect());
+                // let c: dyn Iterator<Item = Cow<'_, HealthStatusDescription<'_>>> = collector
+
+                // .collect()
+
+                // .map(|f| {
+                //     // Cow::Owned::<'a>(HealthStatusDescription {
+                //     //     health_component: self.health_component.clone(),
+                //     //     health_status: f.clone(),
+                //     // })
+                //     let ss = self.health_component.clone();
+                //     let ff = f.clone();
+                //    Cow::Owned(HealthStatusDescription::new(ss, ff))
+                // }).into();
+                // self.collector = Some(Box::new(c));
+
+                let mut v = Vec::new();
+
+                let c = collector.collect();
+
+                for i in c {
+                    let ss = self.health_component.clone();
+                    let ff = i.clone();
+                    let cow: Cow<'_, HealthStatusDescription> = Cow::Owned(HealthStatusDescription::new(ss, ff));
+                    v.push(cow);
+                }
+
+                self.collector = Some(Box::new(v.into_iter()));
+                // self.collector = Some(collector.collect());
                 continue;
             }
 
