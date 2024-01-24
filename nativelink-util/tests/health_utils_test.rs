@@ -8,6 +8,7 @@ use nativelink_error::Error;
 mod health_utils_tests {
     use std::borrow::Borrow;
 
+    use futures::StreamExt;
     // use alloc::collections;
     use nativelink_util::health_utils::*;
     use pretty_assertions::assert_eq;
@@ -90,6 +91,13 @@ mod health_utils_tests {
         let mock_component_impl4 = MockComponentImpl;
         nested2.register_collector(Box::new(mock_component_impl4));
 
+        let nested5 = nested2.add_dependency("nested5".into());
+        let mock_component_impl5 = MockComponentImpl;
+        nested5.register_collector(Box::new(mock_component_impl5));
+
+        let mock_component_impl6 = MockComponentImpl;
+        nested5.register_collector(Box::new(mock_component_impl6));
+
         let collections = health_registery.iter_collectors();
 
         // println!("{:?}", collections);
@@ -98,6 +106,49 @@ mod health_utils_tests {
         for c in collections {
             println!("{:?}", c);
         }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn create_nested_1() -> Result<(), Error> {
+        use std::time::{Duration, Instant};
+
+        use async_stream::stream;
+        use tokio::time::MissedTickBehavior::Delay;
+        // use async_stream::stream;
+
+        // use futures_core::stream::Stream;
+        // use futures_util::pin_mut;
+        // use futures_util::stream::StreamExt;
+
+        // let s = stream! {
+        //     let mut when = Instant::now();
+        //     for _ in 0..3 {
+        //         // let delay = Delay { when };
+        //         // delay.await;
+        //         yield ();
+        //         when += Duration::from_millis(10);
+        //     }
+        // };
+
+        // let i = s.try_collect::<Vec<_>>().await?;
+        // s.for_each(|_| async {
+        //     println!("Hello world!");
+        // }).await;
+        // pin_mut!(s); // needed for iteration
+
+        // while let Some(value) = s.next().await {
+        //     println!("got {}", value);
+        // }
+
+        let mut o = Some(Some("hello"));
+        println!("o = {:?}", o);
+        let o2 = o.take();
+        println!("o2 = {:?}", o2);
+        println!("o = {:?}", o);
+        let k: Option<Result<Option<&str>, Error>> = o2.map(Ok);
+        println!("k = {:?}", k);
 
         Ok(())
     }

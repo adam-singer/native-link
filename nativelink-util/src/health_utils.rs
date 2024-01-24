@@ -15,6 +15,7 @@ pub enum HealthStatus {
     Failed(Name, Description),
 }
 
+// #[async_trait]
 pub trait HealthStatusIndicator: std::fmt::Debug + Send + Sync + 'static {
     fn component_name(&self) -> Name {
         Cow::Borrowed(std::any::type_name::<Self>())
@@ -35,6 +36,10 @@ pub struct HealthRegistry {
     dependencies: Vec<HealthRegistry>,
 }
 
+// pub struct HealthRoot {
+//     health_registry: HealthRegistry,
+// }
+
 impl HealthRegistry {
     pub fn new(health_component: HealthComponent) -> Self {
         Self {
@@ -43,11 +48,14 @@ impl HealthRegistry {
         }
     }
 
+    // TODO(adams): don't take box, use an Arc, we know all of our stuff are Arcs.
     pub fn register_collector(&mut self, collector: Box<dyn HealthStatusIndicator>) {
         self.collectors.push(collector);
     }
 
     pub fn add_dependency(&mut self, health_component: HealthComponent) -> &mut Self {
+        // let s    = self.health_component.to_string() + "/" + health_component.to_string().as_str();
+        // TODO(adams): pick name at collect.
         let dependency = HealthRegistry {
             health_component: health_component, // NOTE: we could do some name munging here if we wanted.
             ..Default::default()

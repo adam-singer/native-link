@@ -1805,6 +1805,7 @@ name = "nativelink-util"
 version = "0.2.0"
 dependencies = [
  "async-lock",
+ "async-stream",
  "async-trait",
  "blake3",
  "bytes",
