@@ -12,7 +12,7 @@ type HealthComponent = String;
 type TypeName = Cow<'static, str>;
 type Message = Cow<'static, str>;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum HealthStatus {
     Ok(TypeName, Message),
     Initializing(TypeName, Message),
@@ -20,7 +20,7 @@ pub enum HealthStatus {
     Failed(TypeName, Message),
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct HealthStatusDescription {
     pub component: HealthComponent,
     pub status: HealthStatus
