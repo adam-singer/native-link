@@ -28,7 +28,7 @@ mod health_utils_tests {
         #[async_trait]
         impl<'a> HealthStatusIndicator<'a> for MockComponentImpl {
             async fn check_health(self: Arc<Self>) -> Result<HealthStatus, Error> {
-                Ok(HealthStatus::Ok)
+                Ok(HealthStatus::Ok(self.type_name()))
             }
         }
 
@@ -46,11 +46,14 @@ mod health_utils_tests {
 
     #[tokio::test]
     async fn create_add_dependency() -> Result<(), Error> {
+        let type_name = std::borrow::Cow::Borrowed(
+            "health_utils_test_2::health_utils_tests::create_add_dependency::{{closure}}::MockComponentImpl",
+        );
         struct MockComponentImpl;
         #[async_trait]
         impl<'a> HealthStatusIndicator<'a> for MockComponentImpl {
             async fn check_health(self: Arc<Self>) -> Result<HealthStatus, Error> {
-                Ok(HealthStatus::Ok)
+                Ok(HealthStatus::Ok(self.type_name()))
             }
         }
 
@@ -65,16 +68,16 @@ mod health_utils_tests {
         let _ = health_registery.deref();
 
         let health_status = health_registery.flatten_indicators().await;
-        println!("health_status: {:?}", health_status);
+        // println!("health_status: {:?}", health_status);
         assert_eq!(health_status.len(), 2);
         let expected_health_status = vec![
             HealthStatusDescription {
                 component: "/nativelink".into(),
-                status: HealthStatus::Ok,
+                status: HealthStatus::Ok(type_name.clone()),
             },
             HealthStatusDescription {
                 component: "/nativelink/dependency1".into(),
-                status: HealthStatus::Ok,
+                status: HealthStatus::Ok(type_name.clone()),
             },
         ];
 

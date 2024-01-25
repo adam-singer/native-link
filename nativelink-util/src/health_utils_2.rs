@@ -11,12 +11,12 @@ use std::fmt::Debug;
 type HealthComponent = String;
 type TypeName = Cow<'static, str>;
 
-#[derive(Debug, Clone, PartialEq, Copy)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum HealthStatus {
-    Ok,
-    Initializing,
-    Warning,
-    Failed,
+    Ok(TypeName),
+    Initializing(TypeName),
+    Warning(TypeName),
+    Failed(TypeName),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -27,12 +27,12 @@ pub struct HealthStatusDescription {
 
 #[async_trait]
 pub trait HealthStatusIndicator<'a>: Sync + Send + Unpin {
-    // fn type_name(&self) -> TypeName {
-    //     Cow::Borrowed(std::any::type_name::<Self>())
-    // }
+    fn type_name(&self) -> TypeName {
+        Cow::Borrowed(std::any::type_name::<Self>())
+    }
 
     async fn check_health(self: Arc<Self>) -> Result<HealthStatus, Error> {
-        Ok(HealthStatus::Ok)
+        Ok(HealthStatus::Ok(self.type_name()))
     }
 }
 
@@ -85,7 +85,7 @@ impl<'a> HealthRegistry<'a> {
                 },
                 Err(_) => HealthStatusDescription {
                     component: component_name.clone(),
-                    status: HealthStatus::Failed
+                    status: HealthStatus::Failed(indicator.type_name())
                 },
             };
 
