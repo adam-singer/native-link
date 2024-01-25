@@ -1,19 +1,11 @@
-use std::borrow::BorrowMut;
 use std::marker::Send;
-use std::pin::Pin;
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use bytes::Bytes;
-use futures::{join, try_join};
-use nativelink_error::{Error, ResultExt};
-use futures::stream::FuturesUnordered;
-use futures::Future;
-use futures::FutureExt;
 use async_recursion::async_recursion;
+use async_trait::async_trait;
+use nativelink_error::Error;
 
 use std::fmt::Debug;
-
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum HealthStatus {
@@ -50,7 +42,7 @@ impl<'a> HealthRegistry<'a> {
         self.indicators.push(indicator);
     }
 
-    pub fn add_dependency(&mut self, component: HealthComponent) -> &mut Self {
+    pub fn add_dependency(&mut self, component: HealthComponent) -> &mut HealthRegistry<'a> {
         let dependency = HealthRegistry::new(component);
 
         self.registries.push(dependency);
@@ -60,10 +52,13 @@ impl<'a> HealthRegistry<'a> {
     }
 
     #[async_recursion]
-    async fn flatten(&mut self,
+    async fn flatten(
+        &mut self,
         //futures: &mut FuturesUnordered<Result<HealthStatus, Error>>,
         results: &mut Vec<HealthStatus>,
-        indicators: &Vec<Arc<dyn HealthStatusIndicator<'a>>>, registries: &Vec<HealthRegistry<'a>>) -> Result<(), Error> {
+        indicators: &Vec<Arc<dyn HealthStatusIndicator<'a>>>,
+        registries: &Vec<HealthRegistry<'a>>,
+    ) -> Result<(), Error> {
         for indicator in indicators {
             let result = indicator.clone().check_health().await;
 
@@ -76,7 +71,10 @@ impl<'a> HealthRegistry<'a> {
         }
 
         for registry in registries {
-            let _ = self.clone().flatten(results, &registry.indicators, &registry.registries).await;
+            let _ = self
+                .clone()
+                .flatten(results, &registry.indicators, &registry.registries)
+                .await;
         }
 
         Ok(())
@@ -87,7 +85,10 @@ impl<'a> HealthRegistry<'a> {
         let mut health_status_results = Vec::new();
         let indicators = &self.indicators;
         let registries = &self.registries;
-        let _ = self.clone().flatten(&mut health_status_results, indicators, registries).await;
+        let _ = self
+            .clone()
+            .flatten(&mut health_status_results, indicators, registries)
+            .await;
         health_status_results
     }
 }
