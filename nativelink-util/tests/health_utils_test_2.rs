@@ -89,12 +89,8 @@ mod health_utils_tests {
         health_registery.register_indicator(Arc::new(MockComponentImpl2 {}));
         health_registery.register_indicator(Arc::new(MockComponentImpl3 {}));
 
-        // let dependency1_registry = health_registery.add_dependency("dependency1".into());
-
-        // dependency1_registry.register_indicator(Arc::new(MockComponentImpl {}));
-
         let health_status = health_registery.flatten_indicators().await;
-        // println!("health_status: {:?}", health_status);
+
         assert_eq!(health_status.len(), 3);
         let expected_health_status = vec_to_set(vec![
             HealthStatusDescription {
@@ -138,7 +134,7 @@ mod health_utils_tests {
             .register_indicator(Arc::new(MockComponentImpl3 {}));
 
         let health_status = health_registery.flatten_indicators().await;
-        // println!("health_status: {:?}", health_status);
+
         assert_eq!(health_status.len(), 3);
         let expected_health_status = vec_to_set(vec![
             HealthStatusDescription {
