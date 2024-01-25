@@ -41,7 +41,7 @@ pub enum UploadSizeInfo {
 }
 
 #[async_trait]
-pub trait Store: Sync + Send + Unpin + HealthStatusIndicator {
+pub trait Store<'a>: Sync + Send + Unpin + HealthStatusIndicator<'a> {
     /// Look up a digest in the store and return None if it does not exist in
     /// the store, or Some(size) if it does.
     /// Note: On an AC store the size will be incorrect and should not be used!
@@ -174,7 +174,7 @@ pub trait Store: Sync + Send + Unpin + HealthStatusIndicator {
     /// A caller might want to use this to obtain a reference to the "real" underlying store
     /// (if applicable) and check if it implements some special traits that allow optimizations.
     /// Note: If the store performs complex operations on the data, it should return itself.
-    fn inner_store(self: Arc<Self>, _digest: Option<DigestInfo>) -> Arc<dyn Store>;
+    fn inner_store(self: Arc<Self>, _digest: Option<DigestInfo>) -> Arc<dyn Store<'a>>;
 
     /// Expect the returned Any to be `Arc<Self>`.
     fn as_any(self: Arc<Self>) -> Box<dyn std::any::Any + Send>;
