@@ -10,13 +10,14 @@ use std::fmt::Debug;
 
 type HealthComponent = String;
 type TypeName = Cow<'static, str>;
+type Message = Cow<'static, str>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum HealthStatus {
-    Ok(TypeName),
-    Initializing(TypeName),
-    Warning(TypeName),
-    Failed(TypeName),
+    Ok(TypeName, Message),
+    Initializing(TypeName, Message),
+    Warning(TypeName, Message),
+    Failed(TypeName, Message),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -32,7 +33,23 @@ pub trait HealthStatusIndicator<'a>: Sync + Send + Unpin {
     }
 
     async fn check_health(self: Arc<Self>) -> Result<HealthStatus, Error> {
-        Ok(HealthStatus::Ok(self.type_name()))
+        Ok(self.make_ok("ok".into()))
+    }
+
+    fn make_ok(&self, message: Message) -> HealthStatus {
+        HealthStatus::Ok(self.type_name(), message)
+    }
+
+    fn make_initializing(&self, message: Message) -> HealthStatus {
+        HealthStatus::Initializing(self.type_name(), message)
+    }
+
+    fn make_warning(&self, message: Message) -> HealthStatus {
+        HealthStatus::Warning(self.type_name(), message)
+    }
+
+    fn make_failed(&self, message: Message) -> HealthStatus {
+        HealthStatus::Failed(self.type_name(), message)
     }
 }
 
@@ -83,9 +100,9 @@ impl<'a> HealthRegistry<'a> {
                     component: component_name.clone(),
                     status: health_status
                 },
-                Err(_) => HealthStatusDescription {
+                Err(error) => HealthStatusDescription {
                     component: component_name.clone(),
-                    status: HealthStatus::Failed(indicator.type_name())
+                    status: indicator.make_failed(format!("health check failed: {error}").into())
                 },
             };
 

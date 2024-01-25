@@ -28,7 +28,7 @@ mod health_utils_tests {
         #[async_trait]
         impl<'a> HealthStatusIndicator<'a> for MockComponentImpl {
             async fn check_health(self: Arc<Self>) -> Result<HealthStatus, Error> {
-                Ok(HealthStatus::Ok(self.type_name()))
+                Ok(HealthStatus::Ok(self.type_name(), "ok".into()))
             }
         }
 
@@ -53,7 +53,7 @@ mod health_utils_tests {
         #[async_trait]
         impl<'a> HealthStatusIndicator<'a> for MockComponentImpl {
             async fn check_health(self: Arc<Self>) -> Result<HealthStatus, Error> {
-                Ok(HealthStatus::Ok(self.type_name()))
+                Ok(HealthStatus::Ok(self.type_name(), "ok".into()))
             }
         }
 
@@ -65,7 +65,6 @@ mod health_utils_tests {
         let dependency1_registry = health_registery.add_dependency("dependency1".into());
 
         dependency1_registry.register_indicator(Arc::new(MockComponentImpl {}));
-        let _ = health_registery.deref();
 
         let health_status = health_registery.flatten_indicators().await;
         // println!("health_status: {:?}", health_status);
@@ -73,11 +72,11 @@ mod health_utils_tests {
         let expected_health_status = vec![
             HealthStatusDescription {
                 component: "/nativelink".into(),
-                status: HealthStatus::Ok(type_name.clone()),
+                status: HealthStatus::Ok(type_name.clone(), "ok".into()),
             },
             HealthStatusDescription {
                 component: "/nativelink/dependency1".into(),
-                status: HealthStatus::Ok(type_name.clone()),
+                status: HealthStatus::Ok(type_name.clone(), "ok".into()),
             },
         ];
 
