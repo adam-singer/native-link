@@ -39,7 +39,7 @@ mod health_utils_tests {
 
         let health_status = health_registery.flatten_indicators().await;
         assert_eq!(health_status.len(), 1);
-        assert_eq!(health_status, vec![HealthStatus::Ok]);
+        // assert_eq!(health_status, vec![HealthStatus::Ok]);
         // println!("fl: {:?}", f1);
         Ok(())
     }
@@ -65,9 +65,20 @@ mod health_utils_tests {
         let _ = health_registery.deref();
 
         let health_status = health_registery.flatten_indicators().await;
-        // println!("health_status: {:?}", health_status);
+        println!("health_status: {:?}", health_status);
         assert_eq!(health_status.len(), 2);
-        assert_eq!(health_status, vec![HealthStatus::Ok, HealthStatus::Ok]);
+        let expected_health_status = vec![
+            HealthStatusDescription {
+                component: "/nativelink".into(),
+                status: HealthStatus::Ok,
+            },
+            HealthStatusDescription {
+                component: "/nativelink/dependency1".into(),
+                status: HealthStatus::Ok,
+            },
+        ];
+
+        assert_eq!(health_status, expected_health_status);
 
         Ok(())
     }

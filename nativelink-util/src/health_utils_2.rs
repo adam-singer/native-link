@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::marker::Send;
 use std::sync::Arc;
 
@@ -7,6 +8,9 @@ use nativelink_error::Error;
 
 use std::fmt::Debug;
 
+type HealthComponent = String;
+type TypeName = Cow<'static, str>;
+
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub enum HealthStatus {
     Ok,
@@ -15,14 +19,24 @@ pub enum HealthStatus {
     Failed,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct HealthStatusDescription {
+    pub component: HealthComponent,
+    pub status: HealthStatus
+}
+
 #[async_trait]
 pub trait HealthStatusIndicator<'a>: Sync + Send + Unpin {
+    // fn type_name(&self) -> TypeName {
+    //     Cow::Borrowed(std::any::type_name::<Self>())
+    // }
+
     async fn check_health(self: Arc<Self>) -> Result<HealthStatus, Error> {
         Ok(HealthStatus::Ok)
     }
 }
 
-type HealthComponent = String;
+
 #[derive(Default, Clone)]
 pub struct HealthRegistry<'a> {
     component: HealthComponent,
@@ -54,17 +68,25 @@ impl<'a> HealthRegistry<'a> {
     #[async_recursion]
     async fn flatten(
         &mut self,
-        //futures: &mut FuturesUnordered<Result<HealthStatus, Error>>,
-        results: &mut Vec<HealthStatus>,
+        results: &mut Vec<HealthStatusDescription>,
+        parent_component: &HealthComponent,
+        component: &HealthComponent,
         indicators: &Vec<Arc<dyn HealthStatusIndicator<'a>>>,
         registries: &Vec<HealthRegistry<'a>>,
     ) -> Result<(), Error> {
+        let component_name = &format!("{parent_component}/{component}");
         for indicator in indicators {
             let result = indicator.clone().check_health().await;
 
             let health_status = match result {
-                Ok(health_status) => health_status,
-                Err(_) => HealthStatus::Failed,
+                Ok(health_status) => HealthStatusDescription {
+                    component: component_name.clone(),
+                    status: health_status
+                },
+                Err(_) => HealthStatusDescription {
+                    component: component_name.clone(),
+                    status: HealthStatus::Failed
+                },
             };
 
             results.push(health_status);
@@ -73,21 +95,22 @@ impl<'a> HealthRegistry<'a> {
         for registry in registries {
             let _ = self
                 .clone()
-                .flatten(results, &registry.indicators, &registry.registries)
+                .flatten(results, &component_name, &registry.component, &registry.indicators, &registry.registries)
                 .await;
         }
 
         Ok(())
     }
 
-    pub async fn flatten_indicators(&mut self) -> Vec<HealthStatus> {
-        // let mut futures:FuturesUnordered<_>  = FuturesUnordered::new();
+    pub async fn flatten_indicators(&mut self) -> Vec<HealthStatusDescription> {
         let mut health_status_results = Vec::new();
+        let parent_component: HealthComponent = "".into();
+        let component = &self.component;
         let indicators = &self.indicators;
         let registries = &self.registries;
         let _ = self
             .clone()
-            .flatten(&mut health_status_results, indicators, registries)
+            .flatten(&mut health_status_results, &parent_component, &component, indicators, registries)
             .await;
         health_status_results
     }
