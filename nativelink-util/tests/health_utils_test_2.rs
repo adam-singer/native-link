@@ -2,12 +2,10 @@ use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::sync::{Arc, Mutex};
 
-use async_trait::async_trait;
 use nativelink_error::Error;
 
 #[cfg(test)]
 mod health_utils_tests {
-    use std::ops::Deref;
 
     use nativelink_util::health_utils_2::*;
     use pretty_assertions::assert_eq;
