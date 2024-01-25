@@ -20,6 +20,7 @@ mod health_utils_tests {
 
         let health_status = health_registery.lock().unwrap().flatten_indicators().await;
         assert_eq!(health_status.len(), 0);
+
         Ok(())
     }
 
@@ -41,7 +42,7 @@ mod health_utils_tests {
                 status: HealthStatus::Ok("MockComponentImpl".into(), "ok".into()),
             }]
         );
-        // println!("fl: {:?}", f1);
+
         Ok(())
     }
 
@@ -157,6 +158,7 @@ mod health_utils_tests {
         ]);
 
         assert_eq!(vec_to_set(health_status), expected_health_status);
+
         Ok(())
     }
 
