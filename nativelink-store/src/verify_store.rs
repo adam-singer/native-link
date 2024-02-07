@@ -22,7 +22,7 @@ use nativelink_error::{make_input_err, Error, ResultExt};
 use nativelink_util::buf_channel::{make_buf_channel_pair, DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
 use nativelink_util::digest_hasher::{DigestHasher, DigestHasherFunc};
-use nativelink_util::health_utils::{default_health_status_indicator, HealthStatusIndicator};
+use nativelink_util::health_utils::{default_health_status_indicator, HealthRegistryBuilder, HealthStatusIndicator};
 use nativelink_util::metrics_utils::{Collector, CollectorState, CounterWithTime, MetricsComponent, Registry};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 
@@ -173,6 +173,10 @@ impl Store for VerifyStore {
 
     fn register_metrics(self: Arc<Self>, registry: &mut Registry) {
         registry.register_collector(Box::new(Collector::new(&self)));
+    }
+
+    fn register_health(self: Arc<Self>, registry: &mut HealthRegistryBuilder) {
+        registry.register_indicator(self);
     }
 }
 

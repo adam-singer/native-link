@@ -21,7 +21,7 @@ use futures::stream::{FuturesUnordered, TryStreamExt};
 use nativelink_error::{error_if, Error, ResultExt};
 use nativelink_util::buf_channel::{DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
-use nativelink_util::health_utils::{default_health_status_indicator, HealthStatusIndicator};
+use nativelink_util::health_utils::{default_health_status_indicator, HealthRegistryBuilder, HealthStatusIndicator};
 use nativelink_util::metrics_utils::Registry;
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 
@@ -190,6 +190,10 @@ impl Store for ShardStore {
             let store_registry = registry.sub_registry_with_prefix(format!("store_{i}"));
             store.clone().register_metrics(store_registry);
         }
+    }
+
+    fn register_health(self: Arc<Self>, registry: &mut HealthRegistryBuilder) {
+        registry.register_indicator(self);
     }
 }
 

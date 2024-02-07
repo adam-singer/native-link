@@ -23,7 +23,7 @@ use nativelink_error::{error_if, Error, ResultExt};
 use nativelink_util::buf_channel::{DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
 use nativelink_util::evicting_map::{EvictingMap, LenEntry};
-use nativelink_util::health_utils::{default_health_status_indicator, HealthStatusIndicator};
+use nativelink_util::health_utils::{default_health_status_indicator, HealthRegistryBuilder, HealthStatusIndicator};
 use nativelink_util::metrics_utils::{CollectorState, MetricsComponent, Registry};
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 
@@ -191,6 +191,10 @@ impl Store for ExistenceCacheStore {
     fn register_metrics(self: Arc<Self>, registry: &mut Registry) {
         let inner_store_registry = registry.sub_registry_with_prefix("inner_store");
         self.inner_store.clone().register_metrics(inner_store_registry);
+    }
+
+    fn register_health(self: Arc<Self>, registry: &mut HealthRegistryBuilder) {
+        registry.register_indicator(self);
     }
 }
 

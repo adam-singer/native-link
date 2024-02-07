@@ -23,7 +23,7 @@ use nativelink_config::stores::StoreConfig;
 use nativelink_error::{make_err, Code, Error, ResultExt};
 use nativelink_util::buf_channel::{make_buf_channel_pair, DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::common::DigestInfo;
-use nativelink_util::health_utils::{default_health_status_indicator, HealthStatusIndicator};
+use nativelink_util::health_utils::{default_health_status_indicator, HealthRegistryBuilder, HealthStatusIndicator};
 use nativelink_util::metrics_utils::Registry;
 use nativelink_util::store_trait::{Store, UploadSizeInfo};
 
@@ -278,6 +278,10 @@ impl Store for FastSlowStore {
         self.fast_store.clone().register_metrics(fast_store_registry);
         let slow_store_registry = registry.sub_registry_with_prefix("slow");
         self.slow_store.clone().register_metrics(slow_store_registry);
+    }
+
+    fn register_health(self: Arc<Self>, registry: &mut HealthRegistryBuilder) {
+        registry.register_indicator(self);
     }
 }
 
