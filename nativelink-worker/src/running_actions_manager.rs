@@ -522,6 +522,7 @@ struct RunningActionImplState {
 
 pub struct RunningActionImpl {
     action_id: ActionId,
+    action_directory: String,
     work_directory: String,
     action_info: ActionInfo,
     timeout: Duration,
@@ -534,14 +535,16 @@ impl RunningActionImpl {
     fn new(
         execution_metadata: ExecutionMetadata,
         action_id: ActionId,
-        work_directory: String,
+        action_directory: String,
         action_info: ActionInfo,
         timeout: Duration,
         running_actions_manager: Arc<RunningActionsManagerImpl>,
     ) -> Self {
         let (kill_channel_tx, kill_channel_rx) = oneshot::channel();
+        let work_directory = format!("{}/{}", action_directory, "work");
         Self {
             action_id,
+            action_directory,
             work_directory,
             action_info,
             timeout,
