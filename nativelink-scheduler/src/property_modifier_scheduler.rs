@@ -47,6 +47,8 @@ impl PropertyModifierScheduler {
 
 #[async_trait]
 impl ActionScheduler for PropertyModifierScheduler {
+    fn notify_client_disconnected(&self, action_info: ActionInfo) {}
+
     async fn get_platform_property_manager(
         &self,
         instance_name: &str,

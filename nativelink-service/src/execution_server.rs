@@ -38,6 +38,7 @@ use nativelink_util::digest_hasher::DigestHasherFunc;
 use nativelink_util::platform_properties::PlatformProperties;
 use nativelink_util::store_trait::Store;
 use rand::{thread_rng, Rng};
+use scopeguard::{ScopeGuard, guard};
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tonic::{Request, Response, Status};
@@ -182,7 +183,9 @@ impl ExecutionServer {
         Server::new(self)
     }
 
-    fn to_execute_stream(receiver: watch::Receiver<Arc<ActionState>>) -> Response<ExecuteStream> {
+    fn to_execute_stream(
+        receiver: watch::Receiver<Arc<ActionState>>
+    ) -> Response<ExecuteStream> {
         let receiver_stream = Box::pin(WatchStream::new(receiver).map(|action_update| {
             info!("\x1b[0;31mexecute Resp Stream\x1b[0m: {:?}", action_update);
             Ok(Into::<Operation>::into(action_update.as_ref().clone()))

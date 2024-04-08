@@ -47,6 +47,7 @@ pub trait ActionScheduler: Sync + Send + Unpin {
     /// Cleans up the cache of recently completed actions.
     async fn clean_recently_completed_actions(&self);
 
+    fn notify_client_disconnected(&self, action_info: ActionInfo);
     /// Register the metrics for the action scheduler.
     fn register_metrics(self: Arc<Self>, _registry: &mut Registry) {}
 }

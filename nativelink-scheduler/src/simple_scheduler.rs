@@ -851,6 +851,10 @@ impl SimpleScheduler {
 
 #[async_trait]
 impl ActionScheduler for SimpleScheduler {
+    fn notify_client_disconnected(&self, action_info: ActionInfo) {
+        println!("winner");
+    }
+
     async fn get_platform_property_manager(
         &self,
         _instance_name: &str,
