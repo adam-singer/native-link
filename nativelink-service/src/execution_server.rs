@@ -38,7 +38,7 @@ use nativelink_util::digest_hasher::DigestHasherFunc;
 use nativelink_util::platform_properties::PlatformProperties;
 use nativelink_util::store_trait::Store;
 use rand::{thread_rng, Rng};
-use scopeguard::{ScopeGuard, guard};
+use scopeguard::guard;
 use tokio::sync::watch;
 use tokio_stream::wrappers::WatchStream;
 use tonic::{Request, Response, Status};
@@ -182,14 +182,24 @@ impl ExecutionServer {
     pub fn into_service(self) -> Server<ExecutionServer> {
         Server::new(self)
     }
-
+    // 1. Detect when stream drops
+    // 2. Trigger callback on the scheduler
+    // impl FnOnce(ExecuteStream)
+    // Find scheduler = self.instance_infos.get(action_info.instance_name())
     fn to_execute_stream(
-        receiver: watch::Receiver<Arc<ActionState>>
+        &self,
+        receiver: watch::Receiver<Arc<ActionState>>,
+        action_info: Option<ActionInfo>
     ) -> Response<ExecuteStream> {
-        let receiver_stream = Box::pin(WatchStream::new(receiver).map(|action_update| {
+        let action_info = action_info.unwrap();
+        let instance_name = action_info.instance_name();
+        let scheduler = &self.instance_infos.get(instance_name).unwrap().scheduler;
+        let signal_disconnect = move |action_info| scheduler.notify_client_disconnected(action_info);
+        let receiver_stream = Box::pin(WatchStream::new(receiver.clone()).map(|action_update| {
             info!("\x1b[0;31mexecute Resp Stream\x1b[0m: {:?}", action_update);
             Ok(Into::<Operation>::into(action_update.as_ref().clone()))
         }));
+        let _scope_guard = guard(receiver.clone(), move |_| signal_disconnect(action_info));
         tonic::Response::new(receiver_stream)
     }
 
@@ -233,11 +243,11 @@ impl ExecutionServer {
 
         let rx = instance_info
             .scheduler
-            .add_action(action_info)
+            .add_action(action_info.clone())
             .await
             .err_tip(|| "Failed to schedule task")?;
 
-        Ok(Self::to_execute_stream(rx))
+        Ok(self.to_execute_stream(rx, Some(action_info)))
     }
 
     async fn inner_wait_execution(
@@ -259,7 +269,7 @@ impl ExecutionServer {
         else {
             return Err(Status::not_found("Failed to find existing task"));
         };
-        Ok(Self::to_execute_stream(rx))
+        Ok(self.to_execute_stream(rx, None))
     }
 }
 
