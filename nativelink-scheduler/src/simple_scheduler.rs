@@ -14,8 +14,10 @@
 
 use std::borrow::Borrow;
 use std::cmp;
+use std::collections::btree_map::Keys;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
+use std::iter::{Cloned, Map, Rev};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -231,7 +233,7 @@ struct SchedulerStateManager {
     // TODO(#192) Revisit if this is the best way to handle recently completed actions.
     pub recently_completed_actions: HashSet<CompletedAction>,
 
-    pub workers: Workers,
+    pub workers: Mutex<Workers>,
 
     pub metrics: Arc<SchedulerStateManagerMetrics>,
 
@@ -240,8 +242,9 @@ struct SchedulerStateManager {
 }
 
 impl SchedulerStateManager {
-    fn immediate_evict_worker(&mut self, worker_id: &WorkerId, err: Error) {
-        if let Some(mut worker) = self.workers.remove_worker(worker_id) {
+    async fn immediate_evict_worker(&mut self, worker_id: &WorkerId, err: Error) {
+        let mut worker_lock = self.workers.lock().await;
+        if let Some(mut worker) = worker_lock.remove_worker(worker_id) {
             self.metrics.workers_evicted.inc();
             // We don't care if we fail to send message to worker, this is only a best attempt.
             let _ = worker.notify_update(WorkerUpdate::Disconnect);
@@ -367,6 +370,7 @@ impl SimpleSchedulerImpl {
         &self,
         unique_qualifier: &ActionInfoHashKey,
     ) -> Option<watch::Receiver<Arc<ActionState>>> {
+        // TODO(adams): use ClientStateManager
         self.scheduler_state_manager
             .recently_completed_actions
             .get(unique_qualifier)
@@ -390,7 +394,8 @@ impl SimpleSchedulerImpl {
                 worker_update_before: None,
                 completed_before: None,
                 last_client_update_before: None,
-                unique_qualifier: unique_qualifier.clone(),
+                unique_qualifier: Some(unique_qualifier.clone()),
+                order_by: None,
             },
         )
         .await;
@@ -484,10 +489,13 @@ impl SimpleSchedulerImpl {
     }
 
     /// Evicts the worker from the pool and puts items back into the queue if anything was being executed on it.
-    fn immediate_evict_worker(&mut self, worker_id: &WorkerId, err: Error) {
-        if let Some(mut worker) = self
+    async fn immediate_evict_worker(&mut self, worker_id: &WorkerId, err: Error) {
+        let mut worker_lock = self
             .scheduler_state_manager
             .workers
+            .lock()
+            .await;
+        if let Some(mut worker) = worker_lock
             .remove_worker(worker_id)
         {
             self.metrics.workers_evicted.inc();
@@ -505,10 +513,13 @@ impl SimpleSchedulerImpl {
     }
 
     /// Sets if the worker is draining or not.
-    fn set_drain_worker(&mut self, worker_id: WorkerId, is_draining: bool) -> Result<(), Error> {
-        let worker = self
+    async fn set_drain_worker(&mut self, worker_id: WorkerId, is_draining: bool) -> Result<(), Error> {
+        let mut lock = self
             .scheduler_state_manager
             .workers
+            .lock()
+            .await;
+        let worker = lock
             .workers
             .get_mut(&worker_id)
             .err_tip(|| format!("Worker {worker_id} doesn't exist in the pool"))?;
@@ -521,102 +532,244 @@ impl SimpleSchedulerImpl {
     // TODO(blaise.bruer) This is an O(n*m) (aka n^2) algorithm. In theory we can create a map
     // of capabilities of each worker and then try and match the actions to the worker using
     // the map lookup (ie. map reduce).
-    fn do_try_match(&mut self) {
+    async fn do_try_match(&mut self) {
         // TODO(blaise.bruer) This is a bit difficult because of how rust's borrow checker gets in
         // the way. We need to conditionally remove items from the `queued_action`. Rust is working
         // to add `drain_filter`, which would in theory solve this problem, but because we need
         // to iterate the items in reverse it becomes more difficult (and it is currently an
         // unstable feature [see: https://github.com/rust-lang/rust/issues/70530]).
-        let action_infos: Vec<Arc<ActionInfo>> = self
-            .scheduler_state_manager
-            .queued_actions
-            .keys()
-            .rev()
-            .cloned()
-            .collect();
-        for action_info in action_infos {
-            let Some(awaited_action) = self
-                .scheduler_state_manager
-                .queued_actions
-                .get(action_info.as_ref())
-            else {
-                event!(
-                    Level::ERROR,
-                    ?action_info,
-                    "queued_actions out of sync with itself"
-                );
-                continue;
-            };
-            let Some(worker) = self
-                .scheduler_state_manager
-                .workers
-                .find_worker_for_action_mut(awaited_action)
-            else {
-                // No worker found, check the next action to see if there's a
-                // matching one for that.
-                continue;
-            };
-            let worker_id = worker.id;
 
-            // Try to notify our worker of the new action to run, if it fails remove the worker from the
-            // pool and try to find another worker.
-            let notify_worker_result =
-                worker.notify_update(WorkerUpdate::RunAction(action_info.clone()));
-            if notify_worker_result.is_err() {
-                // Remove worker, as it is no longer receiving messages and let it try to find another worker.
-                event!(
-                    Level::WARN,
-                    ?worker_id,
-                    ?action_info,
-                    ?notify_worker_result,
-                    "Worker command failed, removing worker",
-                );
-                self.immediate_evict_worker(
-                    &worker_id,
-                    make_err!(
-                        Code::Internal,
-                        "Worker command failed, removing worker {worker_id} -- {notify_worker_result:?}",
-                    ),
-                );
-                return;
-            }
-
-            // At this point everything looks good, so remove it from the queue and add it to active actions.
-            let (action_info, mut awaited_action) = self
-                .scheduler_state_manager
-                .queued_actions
-                .remove_entry(action_info.as_ref())
-                .unwrap();
-            assert!(
-                self.scheduler_state_manager
-                    .queued_actions_set
-                    .remove(&action_info),
-                "queued_actions_set should always have same keys as queued_actions"
+        let action_state_results =
+            <SchedulerStateManager as MatchingEngineStateManager>::filter_operations(
+                &self.scheduler_state_manager,
+                OperationFilter {
+                    stages: OperationStageFlags::Queued,
+                    operation_id: None,
+                    worker_id: None,
+                    action_digest: None,
+                    worker_update_before: None,
+                    completed_before: None,
+                    last_client_update_before: None,
+                    unique_qualifier: None,
+                    order_by: None,
+                },
             );
-            Arc::make_mut(&mut awaited_action.current_state).stage = ActionStage::Executing;
-            awaited_action.worker_id = Some(worker_id);
-            let send_result = awaited_action
-                .notify_channel
-                .send(awaited_action.current_state.clone());
-            if send_result.is_err() {
-                // Don't remove this task, instead we keep them around for a bit just in case
-                // the client disconnected and will reconnect and ask for same job to be executed
-                // again.
-                event!(
-                    Level::WARN,
-                    ?action_info,
-                    ?worker_id,
-                    "Action has no more listeners during do_try_match()"
-                );
+
+        match action_state_results {
+            Ok(mut stream) => {
+                while let Some(action_state_result) = stream.next().await {
+                    // TODO(adams): error handling here.
+                    let action_info = action_state_result.as_action_info().await.unwrap();
+                    let action_info = Arc::new((*action_info).clone());
+                    let Some(awaited_action) = self
+                        .scheduler_state_manager
+                        .queued_actions
+                        .get(action_info.as_ref())
+                    else {
+                        event!(
+                            Level::ERROR,
+                            ?action_info,
+                            "queued_actions out of sync with itself"
+                        );
+                        continue;
+                    };
+
+                    // TODO(adams): What happens when we have two concurrent OperationsId
+                    //  how do we rejoin those actions to a single action.
+                    let mut worker_lock = self
+                        .scheduler_state_manager
+                        .workers
+                        .lock()
+                        .await;
+
+                    let Some(worker) = worker_lock
+                        .find_worker_for_action_mut(awaited_action)
+                    else {
+                        // No worker found, check the next action to see if there's a
+                        // matching one for that.
+                        continue;
+                    };
+
+                    let worker_id = worker.id;
+
+                    // Try to notify our worker of the new action to run, if it fails remove the worker from the
+                    // pool and try to find another worker.
+                    let notify_worker_result =
+                        worker.notify_update(WorkerUpdate::RunAction(action_info.clone()));
+
+                    if notify_worker_result.is_err() {
+                        // Remove worker, as it is no longer receiving messages and let it try to find another worker.
+                        event!(
+                            Level::WARN,
+                            ?worker_id,
+                            ?action_info,
+                            ?notify_worker_result,
+                            "Worker command failed, removing worker",
+                        );
+                        self.immediate_evict_worker(
+                                    &worker_id,
+                                    make_err!(
+                                Code::Internal,
+                                "Worker command failed, removing worker {worker_id} -- {notify_worker_result:?}",
+                            ),
+                                );
+                        return;
+                    }
+
+                    // TODO(adams): This is update_operation for changing state to ActionStage::Execution
+                    // At this point everything looks good, so remove it from the queue and add it to active actions.
+                    let (action_info, mut awaited_action) = self
+                        .scheduler_state_manager
+                        .queued_actions
+                        .remove_entry(action_info.as_ref())
+                        .unwrap();
+                    assert!(
+                        self.scheduler_state_manager
+                            .queued_actions_set
+                            .remove(&action_info),
+                        "queued_actions_set should always have same keys as queued_actions"
+                    );
+                    Arc::make_mut(&mut awaited_action.current_state).stage = ActionStage::Executing;
+                    awaited_action.worker_id = Some(worker_id);
+                    let send_result = awaited_action
+                        .notify_channel
+                        .send(awaited_action.current_state.clone());
+                    if send_result.is_err() {
+                        // Don't remove this task, instead we keep them around for a bit just in case
+                        // the client disconnected and will reconnect and ask for same job to be executed
+                        // again.
+                        event!(
+                            Level::WARN,
+                            ?action_info,
+                            ?worker_id,
+                            "Action has no more listeners during do_try_match()"
+                        );
+                    }
+                    awaited_action.attempts += 1;
+                    self.scheduler_state_manager
+                        .active_actions
+                        .insert(action_info, awaited_action);
+                }
             }
-            awaited_action.attempts += 1;
-            self.scheduler_state_manager
-                .active_actions
-                .insert(action_info, awaited_action);
+            Err(_e) => return, // TODO(adams): trace failure message.
         }
+
+        return;
+
+        // while let Some(result) = action_infos_result.next().await {
+        //     // match result {
+        //     //     Ok(()) => {}
+        //     //     Err(e) => return, // TODO(adams): log error
+        //     // }
+        // }
+
+        // action_infos_result.
+        //
+        //
+        // match action_infos_result {
+        //     Ok(action_infos) =>
+        //         action_infos
+        //
+        //         todo!(),
+        //     Err(_e) => println!("todo")
+        //         //todo!()
+        // }
+
+        // // TODO(adams): filter_operations
+        // let action_infos: Vec<Arc<ActionInfo>> = self
+        //     .scheduler_state_manager
+        //     .queued_actions
+        //     .keys()
+        //     .rev()
+        //     .cloned()
+        //     .collect();
+        // // TODO(adams): iterate over stream
+        // for action_info in action_infos {
+        //     let Some(awaited_action) = self
+        //         .scheduler_state_manager
+        //         .queued_actions
+        //         .get(action_info.as_ref())
+        //     else {
+        //         event!(
+        //             Level::ERROR,
+        //             ?action_info,
+        //             "queued_actions out of sync with itself"
+        //         );
+        //         continue;
+        //     };
+        //     // TODO(adams): What happens when we have two concurrent OperationsId
+        //     //  how do we rejoin those actions to a single action.
+        //     let Some(worker) = self
+        //         .scheduler_state_manager
+        //         .workers
+        //         .find_worker_for_action_mut(awaited_action)
+        //     else {
+        //         // No worker found, check the next action to see if there's a
+        //         // matching one for that.
+        //         continue;
+        //     };
+        //     let worker_id = worker.id;
+        //
+        //     // Try to notify our worker of the new action to run, if it fails remove the worker from the
+        //     // pool and try to find another worker.
+        //     let notify_worker_result =
+        //         worker.notify_update(WorkerUpdate::RunAction(action_info.clone()));
+        //     if notify_worker_result.is_err() {
+        //         // Remove worker, as it is no longer receiving messages and let it try to find another worker.
+        //         event!(
+        //             Level::WARN,
+        //             ?worker_id,
+        //             ?action_info,
+        //             ?notify_worker_result,
+        //             "Worker command failed, removing worker",
+        //         );
+        //         self.immediate_evict_worker(
+        //             &worker_id,
+        //             make_err!(
+        //                 Code::Internal,
+        //                 "Worker command failed, removing worker {worker_id} -- {notify_worker_result:?}",
+        //             ),
+        //         );
+        //         return;
+        //     }
+        //
+        //     // TODO(adams): This is update_operation for changing state to ActionStage::Execution
+        //     // At this point everything looks good, so remove it from the queue and add it to active actions.
+        //     let (action_info, mut awaited_action) = self
+        //         .scheduler_state_manager
+        //         .queued_actions
+        //         .remove_entry(action_info.as_ref())
+        //         .unwrap();
+        //     assert!(
+        //         self.scheduler_state_manager
+        //             .queued_actions_set
+        //             .remove(&action_info),
+        //         "queued_actions_set should always have same keys as queued_actions"
+        //     );
+        //     Arc::make_mut(&mut awaited_action.current_state).stage = ActionStage::Executing;
+        //     awaited_action.worker_id = Some(worker_id);
+        //     let send_result = awaited_action
+        //         .notify_channel
+        //         .send(awaited_action.current_state.clone());
+        //     if send_result.is_err() {
+        //         // Don't remove this task, instead we keep them around for a bit just in case
+        //         // the client disconnected and will reconnect and ask for same job to be executed
+        //         // again.
+        //         event!(
+        //             Level::WARN,
+        //             ?action_info,
+        //             ?worker_id,
+        //             "Action has no more listeners during do_try_match()"
+        //         );
+        //     }
+        //     awaited_action.attempts += 1;
+        //     self.scheduler_state_manager
+        //         .active_actions
+        //         .insert(action_info, awaited_action);
+        // }
     }
 
-    fn update_action_with_internal_error(
+    async fn update_action_with_internal_error(
         &mut self,
         worker_id: &WorkerId,
         action_info_hash_key: &ActionInfoHashKey,
@@ -682,7 +835,7 @@ impl SimpleSchedulerImpl {
         // Clear this action from the current worker.
         if let Some(worker) = self
             .scheduler_state_manager
-            .workers
+            .workers.lock().await
             .workers
             .get_mut(worker_id)
         {
@@ -762,6 +915,10 @@ impl ActionStateResult for ClientActionStateResult {
     async fn as_receiver(&self) -> Result<&'_ Receiver<Arc<ActionState>>, Error> {
         Ok(&self.rx)
     }
+
+    async fn as_action_info(&self) -> Result<&ActionInfo, Error> {
+        unimplemented!()
+    }
 }
 
 #[async_trait]
@@ -835,8 +992,9 @@ impl ClientStateManager for SchedulerStateManager {
         &self,
         filter: OperationFilter,
     ) -> Result<Pin<Box<dyn Stream<Item = Arc<dyn ActionStateResult>> + Send>>, Error> {
-        // TODO(adams): Use operation stage flags to determine which
-        let unique_qualifier = &filter.unique_qualifier;
+        // TODO(adams): Use operation stage flags to determine which.
+        //  Also don't  Option::unwrap()
+        let unique_qualifier = &filter.unique_qualifier.unwrap();
 
         let awaited_action: Option<&AwaitedAction> = self
             .queued_actions_set
@@ -947,7 +1105,8 @@ impl WorkerStateManager for SchedulerStateManager {
             state: running_action.current_state,
         });
 
-        let worker = self.workers.workers.get_mut(&worker_id).ok_or_else(|| {
+        let mut worker_lock = self.workers.lock().await;
+        let worker = worker_lock.workers.get_mut(&worker_id).ok_or_else(|| {
             make_input_err!("WorkerId '{}' does not exist in workers map", worker_id)
         })?;
         worker.complete_action(&action_info);
@@ -956,13 +1115,50 @@ impl WorkerStateManager for SchedulerStateManager {
     }
 }
 
+pub struct MatchingEngineActionStateResult {
+    pub action_info: ActionInfo,
+}
+impl MatchingEngineActionStateResult {
+    fn new(action_info: ActionInfo) -> Self {
+        Self { action_info }
+    }
+}
+
+#[async_trait]
+impl ActionStateResult for MatchingEngineActionStateResult {
+    async fn as_state(&self) -> Result<Arc<ActionState>, Error> {
+        unimplemented!()
+    }
+
+    async fn as_receiver(&self) -> Result<&'_ Receiver<Arc<ActionState>>, Error> {
+        unimplemented!()
+    }
+
+    async fn as_action_info(&self) -> Result<&ActionInfo, Error> {
+        Ok(&self.action_info)
+    }
+}
 #[async_trait]
 impl MatchingEngineStateManager for SchedulerStateManager {
     fn filter_operations(
         &self,
         filter: OperationFilter,
-    ) -> Result<Pin<Box<dyn Stream<Item = Arc<dyn ActionStateResult>> + Send>>, Error> {
-        todo!()
+    ) -> Result<Pin<Box<dyn Stream<Item = Arc<dyn ActionStateResult>> + Send + '_>>, Error> {
+        // TODO(adams): use OperationFilter vs directly encoding it.
+        let action_infos: Map<
+            Cloned<Rev<Keys<Arc<ActionInfo>, AwaitedAction>>>,
+            fn(Arc<ActionInfo>) -> Arc<dyn ActionStateResult>,
+        > = self
+            .queued_actions
+            .keys()
+            .rev()
+            .cloned()
+            .map(|action_info| {
+                let cloned_action_info = (*action_info).clone();
+                Arc::new(MatchingEngineActionStateResult::new(cloned_action_info))
+            });
+
+        Ok(Box::pin(stream::iter(action_infos.into_iter())))
     }
 
     async fn update_operation(
@@ -1034,7 +1230,7 @@ impl SimpleScheduler {
             queued_actions: BTreeMap::new(),
             active_actions: HashMap::new(),
             recently_completed_actions: HashSet::new(),
-            workers: Workers::new(scheduler_cfg.allocation_strategy),
+            workers: Mutex::new(Workers::new(scheduler_cfg.allocation_strategy)),
             metrics: scheduler_state_manager_metrics,
             max_job_retries: max_job_retries.clone(),
         };
@@ -1064,7 +1260,7 @@ impl SimpleScheduler {
                             Some(inner_mux) => {
                                 let mut inner = inner_mux.lock().await;
                                 let timer = metrics_for_do_try_match.do_try_match.begin_timer();
-                                inner.do_try_match();
+                                inner.do_try_match().await;
                                 timer.measure();
                             }
                             // If the inner went away it means the scheduler is shutting
@@ -1084,9 +1280,12 @@ impl SimpleScheduler {
     #[must_use]
     pub async fn contains_worker_for_test(&self, worker_id: &WorkerId) -> bool {
         let inner = self.get_inner_lock().await;
-        inner
+        let worker_lock = inner
             .scheduler_state_manager
             .workers
+            .lock()
+            .await;
+        worker_lock
             .workers
             .contains(worker_id)
     }
@@ -1097,9 +1296,12 @@ impl SimpleScheduler {
         worker_id: &WorkerId,
     ) -> Result<bool, Error> {
         let mut inner = self.get_inner_lock().await;
-        let worker = inner
+        let mut worker_lock = inner
             .scheduler_state_manager
             .workers
+            .lock()
+            .await;
+        let worker = worker_lock
             .workers
             .get_mut(worker_id)
             .ok_or_else(|| {
@@ -1114,9 +1316,12 @@ impl SimpleScheduler {
         worker_id: &WorkerId,
     ) -> Result<(), Error> {
         let mut inner = self.get_inner_lock().await;
-        let worker = inner
+        let mut worker_lock = inner
             .scheduler_state_manager
             .workers
+            .lock()
+            .await;
+        let worker = worker_lock
             .workers
             .get_mut(worker_id)
             .ok_or_else(|| {
@@ -1198,10 +1403,10 @@ impl WorkerScheduler for SimpleScheduler {
     async fn add_worker(&self, worker: Worker) -> Result<(), Error> {
         let worker_id = worker.id;
         let mut inner = self.get_inner_lock().await;
-        self.metrics.add_worker.wrap(move || {
+        self.metrics.add_worker.wrap(async move {
             let res = inner
                 .scheduler_state_manager
-                .workers
+                .workers.lock().await
                 .add_worker(worker)
                 .err_tip(|| "Error while adding worker, removing from pool");
             if let Err(err) = &res {
@@ -1209,7 +1414,7 @@ impl WorkerScheduler for SimpleScheduler {
             }
             inner.tasks_or_workers_change_notify.notify_one();
             res
-        })
+        }).await
     }
 
     async fn update_action_with_internal_error(
@@ -1219,7 +1424,7 @@ impl WorkerScheduler for SimpleScheduler {
         err: Error,
     ) {
         let mut inner = self.get_inner_lock().await;
-        inner.update_action_with_internal_error(worker_id, action_info_hash_key, err);
+        inner.update_action_with_internal_error(worker_id, action_info_hash_key, err).await;
     }
 
     async fn update_action(
@@ -1241,9 +1446,12 @@ impl WorkerScheduler for SimpleScheduler {
         timestamp: WorkerTimestamp,
     ) -> Result<(), Error> {
         let mut inner = self.get_inner_lock().await;
-        inner
+        let mut worker_lock = inner
             .scheduler_state_manager
             .workers
+            .lock()
+            .await;
+        worker_lock
             .refresh_lifetime(worker_id, timestamp)
             .err_tip(|| "Error refreshing lifetime in worker_keep_alive_received()")
     }
@@ -1258,12 +1466,14 @@ impl WorkerScheduler for SimpleScheduler {
 
     async fn remove_timedout_workers(&self, now_timestamp: WorkerTimestamp) -> Result<(), Error> {
         let mut inner = self.get_inner_lock().await;
-        self.metrics.remove_timedout_workers.wrap(move || {
+        self.metrics.remove_timedout_workers.wrap(async move {
             // Items should be sorted based on last_update_timestamp, so we don't need to iterate the entire
             // map most of the time.
             let worker_ids_to_remove: Vec<WorkerId> = inner
                 .scheduler_state_manager
                 .workers
+                .lock()
+                .await
                 .workers
                 .iter()
                 .rev()
@@ -1291,12 +1501,12 @@ impl WorkerScheduler for SimpleScheduler {
             }
 
             Ok(())
-        })
+        }).await
     }
 
     async fn set_drain_worker(&self, worker_id: WorkerId, is_draining: bool) -> Result<(), Error> {
         let mut inner = self.get_inner_lock().await;
-        inner.set_drain_worker(worker_id, is_draining)
+        inner.set_drain_worker(worker_id, is_draining).await
     }
 
     fn register_metrics(self: Arc<Self>, _registry: &mut Registry) {
@@ -1316,11 +1526,11 @@ impl MetricsComponent for SimpleScheduler {
                 &inner.scheduler_state_manager.queued_actions.len(),
                 "The number actions in the queue.",
             );
-            c.publish(
-                "workers_total",
-                &inner.scheduler_state_manager.workers.workers.len(),
-                "The number workers active.",
-            );
+            // c.publish(
+            //     "workers_total",
+            //     &inner.scheduler_state_manager.workers.workers.len(),
+            //     "The number workers active.",
+            // );
             c.publish(
                 "active_actions_total",
                 &inner.scheduler_state_manager.active_actions.len(),
@@ -1350,20 +1560,20 @@ impl MetricsComponent for SimpleScheduler {
                 "The amount of times a job is allowed to retry from an internal error before it is dropped.",
             );
             let mut props = HashMap::<&String, u64>::new();
-            for (_worker_id, worker) in inner.scheduler_state_manager.workers.workers.iter() {
-                c.publish_with_labels(
-                    "workers",
-                    worker,
-                    "",
-                    vec![("worker_id".into(), worker.id.to_string().into())],
-                );
-                for (property, prop_value) in &worker.platform_properties.properties {
-                    let current_value = props.get(&property).unwrap_or(&0);
-                    if let PlatformPropertyValue::Minimum(worker_value) = prop_value {
-                        props.insert(property, *current_value + *worker_value);
-                    }
-                }
-            }
+            // for (_worker_id, worker) in inner.scheduler_state_manager.workers.workers.iter() {
+            //     c.publish_with_labels(
+            //         "workers",
+            //         worker,
+            //         "",
+            //         vec![("worker_id".into(), worker.id.to_string().into())],
+            //     );
+            //     for (property, prop_value) in &worker.platform_properties.properties {
+            //         let current_value = props.get(&property).unwrap_or(&0);
+            //         if let PlatformPropertyValue::Minimum(worker_value) = prop_value {
+            //             props.insert(property, *current_value + *worker_value);
+            //         }
+            //     }
+            // }
             for (property, prop_value) in props {
                 c.publish(
                     &format!("{property}_available_properties"),
@@ -1462,7 +1672,7 @@ struct Metrics {
     existing_actions_found: CounterWithTime,
     existing_actions_not_found: CounterWithTime,
     clean_recently_completed_actions: CounterWithTime,
-    remove_timedout_workers: FuncCounterWrapper,
+    remove_timedout_workers: AsyncCounterWrapper,
     update_action: AsyncCounterWrapper,
     update_action_missing_action_result: CounterWithTime,
     update_action_from_wrong_worker: CounterWithTime,
@@ -1481,7 +1691,8 @@ struct Metrics {
     // add_action_joined_running_action: CounterWithTime,
     // add_action_joined_queued_action: CounterWithTime,
     // add_action_new_action_created: CounterWithTime,
-    add_worker: FuncCounterWrapper,
+    // add_worker: FuncCounterWrapper,
+    add_worker: AsyncCounterWrapper, // TODO(adams): we need a AsyncFuncCounterWrapper
     timedout_workers: CounterWithTime,
     lock_stall_time: AtomicU64,
     lock_stall_time_counter: AtomicU64,
