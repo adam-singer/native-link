@@ -42,6 +42,8 @@ bitflags! {
 pub trait ActionStateResult: Send + Sync + 'static {
     async fn as_state(&self) -> Result<Arc<ActionState>, Error>;
     async fn as_receiver(&self) -> Result<&'_ watch::Receiver<Arc<ActionState>>, Error>;
+    // TODO(adams): test to get a ActionInfo
+    async fn as_action_info(&self) -> Result<&ActionInfo, Error>;
 }
 
 /// Unique id of worker.
@@ -56,6 +58,7 @@ pub type OperationId = Id;
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct OperationFilter {
     // TODO(adams): create rust builder pattern?
+    // TODO(adams): we want to add some ordering by field for matching engine (do_try_match).
 
     /// The stage(s) that the operation must be in.
     pub stages: OperationStageFlags,
@@ -78,7 +81,21 @@ pub struct OperationFilter {
     /// The operation must have it's last client update before this time.
     pub last_client_update_before: Option<SystemTime>,
 
-    pub unique_qualifier: ActionInfoHashKey,
+    pub unique_qualifier: Option<ActionInfoHashKey>,
+
+    pub order_by: Option<OrderBy>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum OperationFields {
+    Priority,
+    Timestamp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct OrderBy {
+    pub fields: Vec<OperationFields>,
+    pub desc: bool
 }
 
 #[async_trait]
@@ -114,7 +131,7 @@ pub trait MatchingEngineStateManager {
     fn filter_operations(
         &self,
         filter: OperationFilter,
-    ) -> Result<Pin<Box<dyn Stream<Item = Arc<dyn ActionStateResult>> + Send>>, Error>;
+    ) -> Result<Pin<Box<dyn Stream<Item = Arc<dyn ActionStateResult + '_>> + Send + '_>>, Error>;
 
     /// Update that state of an operation.
     async fn update_operation(
