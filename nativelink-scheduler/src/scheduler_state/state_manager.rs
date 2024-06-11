@@ -12,20 +12,56 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::cmp;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use async_lock::Mutex;
+use async_trait::async_trait;
 use hashbrown::{HashMap, HashSet};
-use nativelink_util::action_messages::ActionInfo;
+use tokio::sync::watch;
 
+use nativelink_error::{Error, ResultExt};
+use nativelink_util::action_messages::{ActionInfo, ActionStage, ActionState, OperationId};
+
+use crate::operation_state_manager::{ActionStateResult, ActionStateResultStream, ClientStateManager, OperationFilter};
 use crate::scheduler_state::awaited_action::AwaitedAction;
+use crate::scheduler_state::client_action_state_result::ClientActionStateResult;
 use crate::scheduler_state::completed_action::CompletedAction;
+use crate::scheduler_state::metrics::Metrics;
 use crate::scheduler_state::workers::Workers;
+
+#[repr(transparent)]
+pub(crate) struct StateManager {
+    pub inner: Mutex<StateManagerImpl>
+}
+
+impl StateManager {
+    pub(crate) fn new(
+        queued_actions_set: HashSet<Arc<ActionInfo>>,
+        queued_actions: BTreeMap<Arc<ActionInfo>, AwaitedAction>,
+        workers: Workers,
+        active_actions: HashMap<Arc<ActionInfo>, AwaitedAction>,
+        recently_completed_actions: HashSet<CompletedAction>,
+        metrics: Arc<Metrics>,
+    ) -> Self {
+        Self {
+            inner: Mutex::new(StateManagerImpl {
+                queued_actions_set,
+                queued_actions,
+                workers,
+                active_actions,
+                recently_completed_actions,
+                metrics,
+            })
+        }
+    }
+}
 
 /// StateManager is responsible for maintaining the state of the scheduler. Scheduler state
 /// includes the actions that are queued, active, and recently completed. It also includes the
 /// workers that are available to execute actions based on allocation strategy.
-pub(crate) struct StateManager {
+pub(crate) struct StateManagerImpl {
     // TODO(adams): Move `queued_actions_set` and `queued_actions` into a single struct that
     //  provides a unified interface for interacting with the two containers.
 
@@ -63,4 +99,82 @@ pub(crate) struct StateManager {
     /// keep their completion state around for a while to send back.
     /// TODO(#192) Revisit if this is the best way to handle recently completed actions.
     pub(crate) recently_completed_actions: HashSet<CompletedAction>,
+
+    pub(crate) metrics: Arc<Metrics>,
+}
+
+#[async_trait]
+impl ClientStateManager for StateManager {
+    async fn add_action(&self, action_info: ActionInfo) -> Result<Arc<dyn ActionStateResult>, Error> {
+        let mut state_manager = self.inner.lock().await;
+        // Check to see if the action is running, if it is and cacheable, merge the actions.
+        if let Some(running_action) = state_manager.active_actions.get_mut(&action_info) {
+            state_manager.metrics.add_action_joined_running_action.inc();
+            return Ok(Arc::new(ClientActionStateResult::new(
+                running_action.notify_channel.subscribe(),
+            )));
+        }
+
+        // Check to see if the action is queued, if it is and cacheable, merge the actions.
+        if let Some(mut arc_action_info) = state_manager.queued_actions_set.take(&action_info)
+        {
+            let (original_action_info, queued_action) = state_manager
+                .queued_actions
+                .remove_entry(&arc_action_info)
+                .err_tip(|| "Internal error queued_actions and queued_actions_set should match")?;
+            state_manager.metrics.add_action_joined_queued_action.inc();
+
+            let new_priority = cmp::max(original_action_info.priority, action_info.priority);
+            drop(original_action_info); // This increases the chance Arc::make_mut won't copy.
+
+            // In the event our task is higher priority than the one already scheduled, increase
+            // the priority of the scheduled one.
+            Arc::make_mut(&mut arc_action_info).priority = new_priority;
+
+            let result = Arc::new(ClientActionStateResult::new(
+                queued_action.notify_channel.subscribe(),
+            ));
+
+            // Even if we fail to send our action to the client, we need to add this action back to the
+            // queue because it was remove earlier.
+            state_manager
+                .queued_actions
+                .insert(arc_action_info.clone(), queued_action);
+            state_manager
+                .queued_actions_set
+                .insert(arc_action_info);
+            return Ok(result);
+        }
+
+        state_manager.metrics.add_action_new_action_created.inc();
+        // Action needs to be added to queue or is not cacheable.
+        let action_info = Arc::new(action_info);
+
+        let operation_id = OperationId::new(action_info.unique_qualifier.clone());
+        let current_state = Arc::new(ActionState {
+            stage: ActionStage::Queued,
+            id: operation_id,
+        });
+
+        let (tx, rx) = watch::channel(current_state.clone());
+
+        state_manager.queued_actions_set.insert(action_info.clone());
+        state_manager.queued_actions.insert(
+            action_info.clone(),
+            AwaitedAction {
+                action_info,
+                current_state,
+                notify_channel: tx,
+                attempts: 0,
+                last_error: None,
+                worker_id: None,
+            },
+        );
+
+        return Ok(Arc::new(ClientActionStateResult::new(rx)));
+    }
+
+    async fn filter_operations(&self, filter: OperationFilter) -> Result<ActionStateResultStream, Error> {
+        todo!()
+    }
 }
