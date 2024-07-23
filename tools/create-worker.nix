@@ -2,6 +2,7 @@
   pkgs,
   buildImage,
   self,
+  nightly-rust,
   ...
 }: let
   # A temporary directory. Note that this doesn't set any permissions. Those
@@ -34,7 +35,7 @@
     mkdir -p $out/etc/pam.d
 
     echo "root:x:0:0::/root:${pkgs.runtimeShell}" > $out/etc/passwd
-    echo "${user}:x:${uid}:${gid}:::" >> $out/etc/passwd
+    echo "${user}:x:${uid}:${gid}::/home/${user}:${pkgs.runtimeShell} -l" >> $out/etc/passwd
 
     echo "root:!x:::::::" > $out/etc/shadow
     echo "${user}:!x:::::::" >> $out/etc/shadow
@@ -52,8 +53,14 @@
     session required pam_unix.so
     EOF
 
-    touch $out/etc/login.defs
+    #touch $out/etc/login.defs
     mkdir -p $out/home/${user}
+    echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $out/etc/bashrc
+    echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $out/etc/profile
+    # echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $out/.bashrc
+    # echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $out/.profile
+    # echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $out/home/${user}/.bashrc
+    # echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $out/home/${user}/.profile
   '';
 
   # Set permissions for the user's home directory.
@@ -73,7 +80,8 @@ in
   image:
     buildImage {
       name = "nativelink-worker-${image.imageName}";
-      fromImage = image;
+      # Note this removes ability to use the passed arguments from the create-worker invocations.
+      # fromImage = image;
       maxLayers = 20;
       copyToRoot = [
         mkUser
@@ -81,7 +89,9 @@ in
         mkEnvSymlink
         (pkgs.buildEnv {
           name = "${image.imageName}-buildEnv";
-          paths = [pkgs.coreutils pkgs.bash];
+          # channel = "nightly-2024-04-28"
+          # components = ["llvm-tools-preview","rustc-dev","rust-src"]
+          paths = [pkgs.coreutils pkgs.bash nightly-rust.default pkgs.clang pkgs.go pkgs.diffutils pkgs.gnutar pkgs.gzip];
           pathsToLink = ["/bin"];
         })
       ];
@@ -97,8 +107,12 @@ in
       tag = image.imageTag;
 
       config = {
+        # Entrypoint = [ "/bin/bash -l" ];
         User = user;
         WorkingDir = "/home/${user}";
+        # Env = [
+        #   "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        # ];
         Labels = {
           "org.opencontainers.image.description" = "NativeLink worker generated from ${image.imageName}.";
           "org.opencontainers.image.documentation" = "https://github.com/TraceMachina/nativelink";

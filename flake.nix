@@ -51,7 +51,8 @@
         ...
       }: let
         stable-rust-version = "1.79.0";
-        nightly-rust-version = "2024-05-10";
+        # nightly-rust-version = "2024-05-10";
+        nightly-rust-version = "2024-04-28";
 
         # TODO(aaronmondal): Make musl builds work on Darwin.
         # See: https://github.com/TraceMachina/nativelink/issues/751
@@ -176,7 +177,7 @@
         nativelink-worker-init = pkgs.callPackage ./tools/nativelink-worker-init.nix {inherit buildImage self nativelink-image;};
 
         rbe-autogen = import ./local-remote-execution/rbe-autogen.nix {inherit pkgs nativelink buildImage llvmPackages;};
-        createWorker = import ./tools/create-worker.nix {inherit pkgs buildImage self;};
+        createWorker = import ./tools/create-worker.nix {inherit pkgs buildImage self nightly-rust;};
         siso-chromium = buildImage {
           name = "siso-chromium";
           fromImage = pullImage {
