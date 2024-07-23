@@ -3,10 +3,17 @@
   buildEnv,
   buildImage,
   coreutils,
+  clang,
+  go,
+  diffutils,
+  gnutar,
+  gzip,
   lib,
   runCommand,
   runtimeShell,
   self,
+  rust,
+  ...
 }: let
   # A temporary directory. Note that this doesn't set any permissions. Those
   # need to be added explicitly in the final image arguments.
@@ -56,8 +63,14 @@
     session required pam_unix.so
     EOF
 
-    touch $out/etc/login.defs
+    #touch $out/etc/login.defs
     mkdir -p $out/home/${user}
+    echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $out/etc/bashrc
+    echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $out/etc/profile
+    # echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $out/.bashrc
+    # echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $out/.profile
+    # echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $out/home/${user}/.bashrc
+    # echo "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" >> $out/home/${user}/.profile
   '';
 
   # Set permissions for the user's home directory.
@@ -77,7 +90,8 @@ in
   image:
     buildImage {
       name = "nativelink-worker-${image.imageName}";
-      fromImage = image;
+      # Note this removes ability to use the passed arguments from the create-worker invocations.
+      # fromImage = image;
       maxLayers = 20;
       copyToRoot = [
         mkUser
@@ -85,7 +99,7 @@ in
         mkEnvSymlink
         (buildEnv {
           name = "${image.imageName}-buildEnv";
-          paths = [coreutils bash];
+          paths = [coreutils bash rust clang go diffutils gnutar gzip];
           pathsToLink = ["/bin"];
         })
       ];
@@ -101,8 +115,12 @@ in
       tag = image.imageTag;
 
       config = {
+        # Entrypoint = [ "/bin/bash -l" ];
         User = user;
         WorkingDir = "/home/${user}";
+        # Env = [
+        #   "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+        # ];
         Labels = {
           "org.opencontainers.image.description" = "NativeLink worker generated from ${image.imageName}.";
           "org.opencontainers.image.documentation" = "https://github.com/TraceMachina/nativelink";
