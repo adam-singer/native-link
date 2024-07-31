@@ -30,6 +30,7 @@ use nativelink_util::buf_channel::{DropCloserReadHalf, DropCloserWriteHalf};
 use nativelink_util::health_utils::{HealthRegistryBuilder, HealthStatus, HealthStatusIndicator};
 use nativelink_util::store_trait::{StoreDriver, StoreKey, UploadSizeInfo};
 use uuid::Uuid;
+use tracing::{event, Level};
 
 use crate::cas_utils::is_zero_digest;
 
@@ -58,7 +59,7 @@ pub struct RedisStore {
 
 impl RedisStore {
     /// Create a new `RedisStore` from the given configuration
-    pub fn new(config: &nativelink_config::stores::RedisStore) -> Result<Arc<Self>, Error> {
+    pub async fn new(config: &nativelink_config::stores::RedisStore) -> Result<Arc<Self>, Error> {
         if config.addresses.is_empty() {
             return Err(make_err!(
                 Code::InvalidArgument,
@@ -76,29 +77,30 @@ impl RedisStore {
         .err_tip_with_code(|_| (Code::InvalidArgument, "while parsing redis node address"))?;
 
         let mut builder = Builder::from_config(redis_config);
-        builder
-            .set_performance_config(PerformanceConfig {
-                default_command_timeout: Duration::from_secs(config.response_timeout_s),
-                ..Default::default()
-            })
-            .set_connection_config(ConnectionConfig {
-                connection_timeout: Duration::from_secs(config.connection_timeout_s),
-                internal_command_timeout: Duration::from_secs(config.response_timeout_s),
-                ..Default::default()
-            })
-            .set_policy(ReconnectPolicy::new_constant(1, 0));
+        // builder
+        //     .set_performance_config(PerformanceConfig {
+        //         default_command_timeout: Duration::from_secs(config.response_timeout_s),
+        //         ..Default::default()
+        //     })
+        //     .set_connection_config(ConnectionConfig {
+        //         connection_timeout: Duration::from_secs(config.connection_timeout_s),
+        //         internal_command_timeout: Duration::from_secs(config.response_timeout_s),
+        //         ..Default::default()
+        //     })
+        //     .set_policy(ReconnectPolicy::new_constant(1, 0));
 
-        Self::new_from_builder_and_parts(
+        let r = Self::new_from_builder_and_parts(
             builder,
             config.experimental_pub_sub_channel.clone(),
             || Uuid::new_v4().to_string(),
             config.key_prefix.clone(),
-        )
-        .map(Arc::new)
+        ).await;
+        r.map(Arc::new)
+        // .map(Arc::new)
     }
 
     /// Used for testing, when determinism is required
-    pub fn new_from_builder_and_parts(
+    pub async fn new_from_builder_and_parts(
         builder: Builder,
         pub_sub_channel: Option<String>,
         temp_name_generator_fn: fn() -> String,
@@ -108,7 +110,9 @@ impl RedisStore {
             .build_pool(CONNECTION_POOL_SIZE)
             .err_tip(|| "while creating redis connection pool")?;
 
-        client_pool.connect();
+        // client_pool.connect();
+        let r = client_pool.init().await?;
+        event!(Level::INFO, ?r, "Connected to redis");
 
         Ok(Self {
             client_pool,

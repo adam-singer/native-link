@@ -30,6 +30,8 @@ fred = { version = "9.0.3", features = [
   "sentinel-auth",
   "subscriber-client",
   "mocks",
+  "i-all",
+  "network-logs"
 ] }
 futures = { version = "0.3.30", default-features = false }
 hex = { version = "0.4.3", default-features = false }

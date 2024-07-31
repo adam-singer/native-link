@@ -1,53 +1,19 @@
 {
     "stores": {
       "CAS_FAST_SLOW_STORE": {
-        "fast_slow": {
-          "fast": {
-            "redis_store": {
-                "addresses": [
-                    "redis://127.0.0.1:6379/",  // Master node 1
-                    "redis://127.0.0.1:6380/",  // Master node 2
-                    "redis://127.0.0.1:6381/",   // Master node 3
-                    "redis://127.0.0.1:6382/",  // Master node 3
-                    "redis://127.0.0.1:6383/",   // Master node 3
-                    "redis://127.0.0.1:6384/"   // Master node 3
-                    //"redis://172.18.0.2:6379/"  // Master node 3
-                    // "redis://172.18.0.3:6379/",   // Master node 3
-                    // "redis://172.18.0.4:6379/"   // Master node 3
-                  ]
-            }
-          },
-          "slow": {
-            "filesystem": {
-              "content_path": "/tmp/nativelink/data/content_path-index",
-              "temp_path": "/tmp/nativelink/data/tmp_path-index",
-              "eviction_policy": {
-                "max_bytes": 120000000000
-              }
-            }
-          }
+        "redis_store": {
+          "addresses": [
+            "redis://redis1:6379/"  // Master node 1
+          ],
+          "mode": "standard"
         }
       },
       "AC_FAST_SLOW_STORE": {
-        "fast_slow": {
-          "fast": {
-            "filesystem": {
-                "content_path": "/tmp/nativelink/data/content_path-index",
-                "temp_path": "/tmp/nativelink/data/tmp_path-index",
-                "eviction_policy": {
-                  "max_bytes": 120000000000
-                }
-              }
-          },
-          "slow": {
-            "filesystem": {
-              "content_path": "/tmp/nativelink/data/content_path-ac",
-              "temp_path": "/tmp/nativelink/data/tmp_path-ac",
-              "eviction_policy": {
-                "max_bytes": 5000000000
-              }
-            }
-          }
+        "redis_store": {
+          "addresses": [
+            "redis://redis1:6379/"  // Master node 1
+          ],
+          "mode": "cluster"
         }
       },
       "AC_MAIN_STORE": {
