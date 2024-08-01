@@ -1,0 +1,10 @@
+redis:
+  image: "bitnami/redis-cluster:latest"
+  replicas: 6
+  ports:
+    client: 6379
+
+redisInsight:
+  image: "redis/redisinsight:latest"
+  ports:
+    web: 5540

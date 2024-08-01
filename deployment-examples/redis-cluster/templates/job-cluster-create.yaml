@@ -1,0 +1,19 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: redis-cluster-create
+spec:
+  template:
+    spec:
+      containers:
+        - name: redis-cluster-create
+          image: bitnami/redis-cluster:latest
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              sleep 5 &&
+              redis-cli --cluster create \
+              redis-redis:6379 redis-redis:6380 redis-redis:6381 \
+              redis-redis:6382 redis-redis:6383 redis-redis:6384 \
+              --cluster-replicas 1 --cluster-yes
+      restartPolicy: OnFailure

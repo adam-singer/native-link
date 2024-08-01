@@ -11,13 +11,9 @@
               "lz4": {}
             },
             "backend": {
-              "filesystem": {
-                "content_path": "~/.cache/nativelink/content_path-cas",
-                "temp_path": "~/.cache/nativelink/tmp_path-cas",
-                "eviction_policy": {
-                  // 10gb.
-                  "max_bytes": 10000000000,
-                }
+              "redis_store": {
+                "addresses": ["redis://127.0.0.1:6379/"],
+                "mode": "cluster"
               }
             }
           }
@@ -27,13 +23,9 @@
     "AC_MAIN_STORE": {
       "completeness_checking": {
         "backend": {
-          "filesystem": {
-            "content_path": "~/.cache/nativelink/content_path-ac",
-            "temp_path": "~/.cache/nativelink/tmp_path-ac",
-            "eviction_policy": {
-              // 500mb.
-              "max_bytes": 500000000,
-            }
+          "redis_store": {
+            "addresses": ["redis://127.0.0.1:6379/"],
+            "mode": "cluster"
           }
         },
         "cas_store": {

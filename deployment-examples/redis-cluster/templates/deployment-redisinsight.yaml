@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redisinsight
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redisinsight
+  template:
+    metadata:
+      labels:
+        app: redisinsight
+    spec:
+      containers:
+        - name: redisinsight
+          image: {{ .Values.redisInsight.image }}
+          ports:
+            - containerPort: {{ .Values.redisInsight.ports.web }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redisinsight
+spec:
+  selector:
+    app: redisinsight
+  ports:
+    - port: 5540
+      targetPort: 5540
