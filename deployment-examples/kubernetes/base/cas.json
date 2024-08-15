@@ -12,8 +12,8 @@
             },
             "backend": {
               "filesystem": {
-                "content_path": "~/.cache/nativelink/content_path-cas",
-                "temp_path": "~/.cache/nativelink/tmp_path-cas",
+                "content_path": "/home/nativelink/.cache/nativelink/content_path-cas",
+                "temp_path": "/home/nativelink/.cache/nativelink/tmp_path-cas",
                 "eviction_policy": {
                   // 10gb.
                   "max_bytes": 10000000000,
@@ -28,11 +28,11 @@
       "completeness_checking": {
         "backend": {
           "filesystem": {
-            "content_path": "~/.cache/nativelink/content_path-ac",
-            "temp_path": "~/.cache/nativelink/tmp_path-ac",
+            "content_path": "/home/nativelink/.cache/nativelink/content_path-ac",
+            "temp_path": "/home/nativelink/.cache/nativelink/tmp_path-ac",
             "eviction_policy": {
               // 500mb.
-              "max_bytes": 500000000,
+              "max_bytes": 10000000000,
             }
           }
         },
@@ -47,7 +47,11 @@
   "servers": [{
     "listener": {
       "http": {
-        "socket_address": "0.0.0.0:50051"
+        "socket_address": "0.0.0.0:50051",
+        "advanced_http": {
+          "experimental_http2_max_pending_accept_reset_streams": 500,
+          "experimental_http2_max_concurrent_streams": 500
+        }
       }
     },
     "services": {
@@ -66,6 +70,7 @@
         "cas_stores": {
           "main": "CAS_MAIN_STORE",
         },
+        "max_decoding_message_size": 1073741824
       }
     }
   },
@@ -73,7 +78,11 @@
     // Only publish metrics on a private port.
     "listener": {
       "http": {
-        "socket_address": "0.0.0.0:50061"
+        "socket_address": "0.0.0.0:50061",
+        "advanced_http": {
+          "experimental_http2_max_pending_accept_reset_streams": 500,
+          "experimental_http2_max_concurrent_streams": 500
+        }
       }
     },
     "services": {
@@ -86,10 +95,10 @@
     "listener": {
       "http": {
         "socket_address": "0.0.0.0:50071",
-        "tls": {
-          "cert_file": "/root/example-do-not-use-in-prod-rootca.crt",
-          "key_file": "/root/example-do-not-use-in-prod-key.pem"
-        }
+        // "tls": {
+        //   "cert_file": "/root/example-do-not-use-in-prod-rootca.crt",
+        //   "key_file": "/root/example-do-not-use-in-prod-key.pem"
+        // }
       }
     },
     "services": {

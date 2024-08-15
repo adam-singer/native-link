@@ -19,7 +19,7 @@ spec:
           image: nativelink
           env:
             - name: RUST_LOG
-              value: info
+              value: warn
             - name: CAS_ENDPOINT
               value: nativelink-cas
           ports:

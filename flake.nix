@@ -291,6 +291,8 @@
               pkgs.lld_16
               pkgs.clang_16
               buck2-rust
+              # debugging
+              pkgs.findutils
             ];
           };
         siso-chromium = buildImage {

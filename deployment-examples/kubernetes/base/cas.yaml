@@ -19,7 +19,9 @@ spec:
           image: nativelink
           env:
             - name: RUST_LOG
-              value: info
+              value: warn
+            - name: NL_LOG
+              value: compact
           ports:
             - containerPort: 50051
             - containerPort: 50061

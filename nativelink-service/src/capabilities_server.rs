@@ -33,7 +33,8 @@ use nativelink_util::operation_state_manager::ClientStateManager;
 use tonic::{Request, Response, Status};
 use tracing::{event, instrument, Level};
 
-const MAX_BATCH_TOTAL_SIZE: i64 = 64 * 1024;
+// const MAX_BATCH_TOTAL_SIZE: i64 = 64 * 1024;
+const MAX_BATCH_TOTAL_SIZE: i64 = 0;
 
 #[derive(Debug, Default)]
 pub struct CapabilitiesServer {
